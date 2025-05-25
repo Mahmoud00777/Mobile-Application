@@ -1,17 +1,18 @@
 import 'package:drsaf/screen/material_request_detail_page.dart';
+import 'package:drsaf/screen/store_screen_details.dart';
 import 'package:flutter/material.dart';
 import '../models/materials_requestM.dart';
 import '../services/materials_service.dart';
 import 'materials_request.dart';
 
-class MaterialRequestScreen extends StatefulWidget {
-  const MaterialRequestScreen({super.key});
+class MaterialStoreScreen extends StatefulWidget {
+  const MaterialStoreScreen({super.key});
 
   @override
-  State<MaterialRequestScreen> createState() => _MaterialRequestScreenState();
+  State<MaterialStoreScreen> createState() => _MaterialStoreScreenState();
 }
 
-class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
+class _MaterialStoreScreenState extends State<MaterialStoreScreen> {
   late Future<List<MaterialRequest>> _requestsFuture;
   final Color primaryColor = const Color(0xFFBDB395);
   final Color secondaryColor = Colors.white;
@@ -20,12 +21,12 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   @override
   void initState() {
     super.initState();
-    _requestsFuture = MaterialRequestService.getMaterialRequests();
+    _requestsFuture = MaterialRequestService.getMaterialStoreRequests();
   }
 
   void _refreshRequests() {
     setState(() {
-      _requestsFuture = MaterialRequestService.getMaterialRequests();
+      _requestsFuture = MaterialRequestService.getMaterialStoreRequests();
     });
   }
 
@@ -254,7 +255,7 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MaterialRequestDetailPage(requestName: requestName),
+        builder: (_) => MaterialStoreDetailPage(requestName: requestName),
       ),
     );
   }

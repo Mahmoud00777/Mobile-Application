@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/visit.dart';
-import 'api_client.dart';
+import 'package:drsaf/services/api_client.dart';
 
 class VisitService {
   static String _getErrorReason(int statusCode, String body) {
@@ -15,8 +16,13 @@ class VisitService {
   }
 
   static Future<List<Visit>> getVisits() async {
+    final prefs = await SharedPreferences.getInstance();
+    final posOpeningShift = prefs.getString('pos_open');
+
     final res = await ApiClient.get(
-      '/api/resource/Visit?fields=["name","note","latitude","longitude","image","visit","select_state","customer","pos_profile","pos_opening_shift","data_time"]',
+      '/api/resource/Visit?filters=['
+      '["pos_opening_shift","=","$posOpeningShift"]'
+      ']&&fields=["name","note","latitude","longitude","image","visit","select_state","customer","pos_profile","pos_opening_shift","data_time"]',
     );
 
     print('GET visits => status: ${res.statusCode}, body: ${res.body}');

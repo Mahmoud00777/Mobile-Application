@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -658,8 +657,7 @@ class _VisitScreenState extends State<VisitScreen> {
                           ],
                         ),
                       ),
-                    if (visit.customer != null)
-                      Text('العميل: ${visit.customer}'),
+                    Text('العميل: ${visit.customer}'),
 
                     if (visit.posProfileName != null)
                       Text('ملف البيع: ${visit.posProfileName}'),
@@ -681,11 +679,11 @@ class _VisitScreenState extends State<VisitScreen> {
 
   void _showVisitDetailsBottomSheet(BuildContext context, Visit visit) {
     // ننقل متغيرات التعديل هنا
-    final TextEditingController _noteController = TextEditingController(
+    final TextEditingController noteController = TextEditingController(
       text: visit.note,
     );
-    String _selectedState = visit.select_state;
-    bool _isModified = false;
+    String selectedState = visit.select_state;
+    bool isModified = false;
     print('_showVisitDetailsBottomSheet => visit: ${visit.name}');
 
     showModalBottomSheet(
@@ -720,12 +718,12 @@ class _VisitScreenState extends State<VisitScreen> {
                         ),
                         Row(
                           children: [
-                            if (_isModified)
+                            if (isModified)
                               TextButton(
                                 onPressed: () async {
                                   final updatedVisit = visit.copyWith(
-                                    note: _noteController.text,
-                                    select_state: _selectedState,
+                                    note: noteController.text,
+                                    select_state: selectedState,
                                   );
                                   await VisitService.updateVisit(updatedVisit);
                                   Navigator.pop(context);
@@ -754,7 +752,7 @@ class _VisitScreenState extends State<VisitScreen> {
                         children: [
                           // حقل حالة الزيارة (قابل للتعديل)
                           DropdownButtonFormField<String>(
-                            value: _selectedState,
+                            value: selectedState,
                             decoration: InputDecoration(
                               labelText: 'حالة الزيارة',
                               border: OutlineInputBorder(),
@@ -774,8 +772,8 @@ class _VisitScreenState extends State<VisitScreen> {
                                 }).toList(),
                             onChanged: (value) {
                               setModalState(() {
-                                _selectedState = value!;
-                                _isModified = true;
+                                selectedState = value!;
+                                isModified = true;
                               });
                             },
                           ),
@@ -783,14 +781,14 @@ class _VisitScreenState extends State<VisitScreen> {
 
                           // حقل الملاحظات (قابل للتعديل)
                           TextField(
-                            controller: _noteController,
+                            controller: noteController,
                             maxLines: 3,
                             decoration: InputDecoration(
                               labelText: 'ملاحظات',
                               border: OutlineInputBorder(),
                             ),
                             onChanged: (value) {
-                              setModalState(() => _isModified = true);
+                              setModalState(() => isModified = true);
                             },
                           ),
                           SizedBox(height: 16),
@@ -802,8 +800,7 @@ class _VisitScreenState extends State<VisitScreen> {
                                 : 'غير متوفر',
                           ),
 
-                          if (visit.customer != null)
-                            _buildReadOnlyInfo('العميل', visit.customer),
+                          _buildReadOnlyInfo('العميل', visit.customer),
 
                           _buildReadOnlyInfo('الوردية', visit.posOpeningShift),
 

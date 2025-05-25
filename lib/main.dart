@@ -20,8 +20,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final routeObserver = RouteObserver<PageRoute>();
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [routeObserver],
       home: FutureBuilder<bool>(
         future: isLoggedIn(),
         builder: (context, snapshot) {

@@ -229,6 +229,16 @@ class _LoginState extends State<Login> {
             MaterialPageRoute(builder: (_) => PosOpeningPage()),
           );
         } else {
+          // final name = hasOpenPOS['name'];
+          // final posTime = hasOpenPOS['period_start_date'];
+          // final prefs = await SharedPreferences.getInstance();
+          // await prefs.setString('pos_open', name);
+          // await prefs.setString('pos_time', posTime);
+          //        await prefs.setString(
+          //   'selected_pos_profile',
+          //   jsonEncode(selectedPOSProfile),
+          // );
+
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (context) => HomePage(showLoginSuccess: true),

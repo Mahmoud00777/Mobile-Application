@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/materials_requestM.dart';
 import '../services/materials_service.dart';
 
-class MaterialRequestDetailPage extends StatefulWidget {
+class MaterialStoreDetailPage extends StatefulWidget {
   final String requestName;
   final Color primaryColor = const Color(0xFFBDB395);
   final Color secondaryColor = Colors.white;
@@ -10,22 +10,106 @@ class MaterialRequestDetailPage extends StatefulWidget {
   final Color pressedColor = const Color(0xFFF2E2B1);
   final Color textColor = const Color(0xFF333333);
 
-  const MaterialRequestDetailPage({super.key, required this.requestName});
+  const MaterialStoreDetailPage({super.key, required this.requestName});
 
   @override
-  State<MaterialRequestDetailPage> createState() =>
-      _MaterialRequestDetailPageState();
+  State<MaterialStoreDetailPage> createState() =>
+      _MaterialStoreDetailPageState();
 }
 
-class _MaterialRequestDetailPageState extends State<MaterialRequestDetailPage> {
+class _MaterialStoreDetailPageState extends State<MaterialStoreDetailPage> {
   late Future<MaterialRequest> _requestFuture;
+  bool _isApproving = false;
+  bool _isRejecting = false;
 
   @override
   void initState() {
     super.initState();
-    _requestFuture = MaterialRequestService.getMaterialRequestByName(
-      widget.requestName,
-    );
+    _loadRequestData();
+  }
+
+  void _loadRequestData() {
+    setState(() {
+      _requestFuture = MaterialRequestService.getMaterialRequestByName(
+        widget.requestName,
+      );
+    });
+  }
+
+  Future<void> _approveRequest() async {
+    if (!mounted) return;
+
+    setState(() => _isApproving = true);
+
+    try {
+      final result = await MaterialRequestService.approveRequest(
+        widget.requestName,
+      );
+
+      if (!mounted) return;
+
+      if (result['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تمت الموافقة على الطلب بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadRequestData(); // إعادة تحميل البيانات لتحديث الحالة
+      } else {
+        throw Exception(result['error'] ?? 'فشل في الموافقة على الطلب');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isApproving = false);
+      }
+    }
+  }
+
+  Future<void> _rejectRequest() async {
+    // if (!mounted) return;
+
+    // setState(() => _isRejecting = true);
+
+    // try {
+    //   final result = await MaterialRequestService.rejectRequest(
+    //     widget.requestName,
+    //   );
+
+    //   if (!mounted) return;
+
+    //   if (result['success']) {
+    //     ScaffoldMessenger.of(context).showSnackBar(
+    //       const SnackBar(
+    //         content: Text('تم رفض الطلب بنجاح'),
+    //         backgroundColor: Colors.green,
+    //       ),
+    //     );
+    //     _loadRequestData(); // إعادة تحميل البيانات لتحديث الحالة
+    //   } else {
+    //     throw Exception(result['error'] ?? 'فشل في رفض الطلب');
+    //   }
+    // } catch (e) {
+    //   if (!mounted) return;
+    //   ScaffoldMessenger.of(context).showSnackBar(
+    //     SnackBar(
+    //       content: Text('خطأ: ${e.toString()}'),
+    //       backgroundColor: Colors.red,
+    //     ),
+    //   );
+    // } finally {
+    //   if (mounted) {
+    //     setState(() => _isRejecting = false);
+    //   }
+    // }
   }
 
   @override
@@ -48,7 +132,7 @@ class _MaterialRequestDetailPageState extends State<MaterialRequestDetailPage> {
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 4,
       ),
-
+      bottomNavigationBar: _buildApprovalButtons(),
       body: FutureBuilder<MaterialRequest>(
         future: _requestFuture,
         builder: (context, snapshot) {
@@ -93,14 +177,7 @@ class _MaterialRequestDetailPageState extends State<MaterialRequestDetailPage> {
                         vertical: 12,
                       ),
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _requestFuture =
-                            MaterialRequestService.getMaterialRequestByName(
-                              widget.requestName,
-                            );
-                      });
-                    },
+                    onPressed: _loadRequestData,
                     child: const Text(
                       'إعادة المحاولة',
                       style: TextStyle(color: Colors.white),
@@ -153,6 +230,11 @@ class _MaterialRequestDetailPageState extends State<MaterialRequestDetailPage> {
                           icon: Icons.warehouse,
                           label: 'المخزن:',
                           value: request.warehouse,
+                        ),
+                        _buildDetailRow(
+                          icon: Icons.assignment_ind,
+                          label: 'الحالة:',
+                          value: _getStatusText(request.status),
                         ),
                       ],
                     ),
@@ -240,6 +322,102 @@ class _MaterialRequestDetailPageState extends State<MaterialRequestDetailPage> {
     );
   }
 
+  Widget _buildApprovalButtons() {
+    return FutureBuilder<MaterialRequest>(
+      future: _requestFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done ||
+            snapshot.hasError) {
+          return const SizedBox.shrink();
+        }
+
+        final request = snapshot.data!;
+
+        // إخفاء الأزرار إذا كان الطلب معتمدا أو مرفوضا
+        if (request.status == 'Approved' || request.status == 'Rejected') {
+          return const SizedBox.shrink();
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: widget.secondaryColor,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
+              ),
+            ],
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade600,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: _isRejecting ? null : _rejectRequest,
+                  icon:
+                      _isRejecting
+                          ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Icon(Icons.close, color: Colors.white),
+                  label: Text(
+                    _isRejecting ? 'جاري الرفض...' : 'رفض الطلب',
+                    style: const TextStyle(fontSize: 16, color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade600,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: _isApproving ? null : _approveRequest,
+                  icon:
+                      _isApproving
+                          ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Icon(Icons.check, color: Colors.white),
+                  label: Text(
+                    _isApproving ? 'جاري الموافقة...' : 'موافقة على الطلب',
+                    style: const TextStyle(fontSize: 16, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildDetailRow({
     required IconData icon,
     required String label,
@@ -277,5 +455,18 @@ class _MaterialRequestDetailPageState extends State<MaterialRequestDetailPage> {
         ],
       ),
     );
+  }
+
+  String _getStatusText(String status) {
+    switch (status) {
+      case 'Approved':
+        return 'تمت الموافقة';
+      case 'Rejected':
+        return 'تم الرفض';
+      case 'Pending':
+        return 'قيد الانتظار';
+      default:
+        return status;
+    }
   }
 }

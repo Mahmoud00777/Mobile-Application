@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:drsaf/services/api_client.dart';
+import 'package:drsaf/services/visit_service.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/sales_invoice.dart';
 import '../services/item_service.dart';
@@ -10,14 +12,14 @@ import '../services/customer_service.dart';
 import '../models/item.dart';
 import '../models/customer.dart';
 
-class POSScreen extends StatefulWidget {
-  const POSScreen({super.key});
+class POSReturnScreen extends StatefulWidget {
+  const POSReturnScreen({super.key});
 
   @override
-  _POSScreenState createState() => _POSScreenState();
+  _POSReturbScreenState createState() => _POSReturbScreenState();
 }
 
-class _POSScreenState extends State<POSScreen> {
+class _POSReturbScreenState extends State<POSReturnScreen> {
   List<Map<String, dynamic>> cartItems = [];
   double total = 0.0;
   Customer? selectedCustomer;
@@ -174,8 +176,6 @@ class _POSScreenState extends State<POSScreen> {
           'quantity': 1,
           'uom': product.uom,
           'additionalUOMs': product.additionalUOMs,
-          'discount_amount': product.discount_amount,
-          'discount_percentage': product.discount_percentage,
         });
       }
       // تحديث الإجمالي
@@ -250,65 +250,39 @@ class _POSScreenState extends State<POSScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+      builder: (context) => Center(child: CircularProgressIndicator()),
     );
 
     try {
       final double paidAmount = paymentData['paid_amount'];
+      print('paymentData-----------------${paymentData['paid_amount']}');
       final double outstanding = paymentData['outstanding_amount'];
-      final double? discountAmount = paymentData['discount_amount'] ?? 0.0;
-      final double? discountPercentage =
-          paymentData['additional_discount_percentage'] ?? 0.0;
-      final double totalAfterDiscount =
-          paymentData['total_after_discount'] ?? total;
 
-      print('''
-    بيانات الدفع:
-    المبلغ المدفوع: $paidAmount
-    المتبقي: $outstanding
-    الخصم: ${discountAmount ?? discountPercentage} ${discountAmount != null ? 'د.ر' : '%'}
-    الإجمالي بعد الخصم: $totalAfterDiscount
-    ''');
-
-      final invoiceResult = await SalesInvoice.createSalesInvoice(
+      final invoiceResult = await SalesInvoice.createReturnSalesInvoice(
         customer: selectedCustomer!,
         items: cartItems,
-        total: totalAfterDiscount, // استخدام الإجمالي بعد الخصم
+        total: total,
         paymentMethod: paymentData,
         paidAmount: paidAmount,
         outstandingAmount: outstanding,
-        discountAmount: discountAmount,
-        discountPercentage: discountPercentage,
+        notes: paymentData['notes'],
+        attachedImages: paymentData['attached_images'],
       );
 
       if (!invoiceResult['success']) {
         throw Exception(invoiceResult['error']);
       }
 
-      Navigator.pop(context); // إغلاق دائرة التحميل
-
-      // عرض إشعار النجاح
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إتمام البيع بنجاح'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      Navigator.pop(context);
 
       setState(() {
         cartItems.clear();
         total = 0.0;
-        selectedCustomer = null;
       });
-    } catch (e, stack) {
-      Navigator.pop(context); // إغلاق دائرة التحميل في حالة الخطأ
-      print('خطأ في إتمام البيع: $e\n$stack');
-
+    } catch (e) {
+      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('فشل في إتمام البيع: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('فشل في إتمام البيع: ${e.toString()}')),
       );
     }
   }
@@ -319,14 +293,12 @@ class _POSScreenState extends State<POSScreen> {
     double invoiceTotal,
   ) async {
     String selectedMethod = paymentMethods.first['mode_of_payment'];
-    final TextEditingController amountController = TextEditingController(
+    TextEditingController amountController = TextEditingController(
       text: invoiceTotal.toStringAsFixed(2),
     );
-    final TextEditingController discountController = TextEditingController();
+    TextEditingController notesController = TextEditingController();
     double paidAmount = invoiceTotal;
-    String discountType = 'fixed'; // 'fixed' or 'percentage'
-    double invoiceDiscount = 0.0;
-    double invoiceAfterDiscount = invoiceTotal;
+    List<File> attachedImages = []; // قائمة لحفظ الصور المرفوعة
 
     return await showDialog<Map<String, dynamic>>(
       context: context,
@@ -334,46 +306,39 @@ class _POSScreenState extends State<POSScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
-            void updateInvoice() {
-              final discountValue =
-                  double.tryParse(discountController.text) ?? 0.0;
-
-              if (discountType == 'percentage') {
-                invoiceDiscount = invoiceTotal * (discountValue / 100);
-              } else {
-                invoiceDiscount = discountValue;
-              }
-
-              // التأكد من عدم تجاوز الخصم للمبلغ الإجمالي
-              if (invoiceDiscount > invoiceTotal) {
-                invoiceDiscount = invoiceTotal;
-              }
-
-              invoiceAfterDiscount = invoiceTotal - invoiceDiscount;
-
-              // تحديث المبلغ المدفوع ليتطابق مع المبلغ بعد الخصم
-              if (paidAmount > invoiceAfterDiscount) {
-                paidAmount = invoiceAfterDiscount;
-                amountController.text = paidAmount.toStringAsFixed(2);
-              }
-
-              setState(() {});
-            }
-
-            void toggleDiscountType() {
+            Future<void> pickImages() async {
+              final pickedFiles = await ImagePicker().pickMultiImage(
+                maxWidth: 800,
+                maxHeight: 800,
+                imageQuality: 85,
+              );
               setState(() {
-                discountType = discountType == 'fixed' ? 'percentage' : 'fixed';
-                updateInvoice();
+                attachedImages.addAll(
+                  pickedFiles.map((file) => File(file.path)),
+                );
               });
             }
 
+            Future<void> takePhoto() async {
+              final pickedFile = await ImagePicker().pickImage(
+                source: ImageSource.camera,
+                maxWidth: 800,
+                maxHeight: 800,
+                imageQuality: 85,
+              );
+              if (pickedFile != null) {
+                setState(() {
+                  attachedImages.add(File(pickedFile.path));
+                });
+              }
+            }
+
             return AlertDialog(
-              title: const Text('إتمام عملية الدفع'),
+              title: Text('إتمام عملية الإرجاع'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // طريقة الدفع
                     DropdownButtonFormField<String>(
                       value: selectedMethod,
                       items:
@@ -383,78 +348,15 @@ class _POSScreenState extends State<POSScreen> {
                               child: Text(method['mode_of_payment']),
                             );
                           }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          selectedMethod = value!;
-                        });
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'طريقة الدفع',
-                        border: OutlineInputBorder(),
-                      ),
+                      onChanged: (value) => selectedMethod = value!,
+                      decoration: InputDecoration(labelText: 'طريقة الدفع'),
                     ),
-
-                    const SizedBox(height: 20),
-
-                    // قسم الخصم
-                    Card(
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: discountController,
-                                    keyboardType: TextInputType.number,
-                                    decoration: InputDecoration(
-                                      labelText:
-                                          discountType == 'fixed'
-                                              ? 'قيمة الخصم'
-                                              : 'نسبة الخصم %',
-                                      border: const OutlineInputBorder(),
-                                      prefixIcon: Icon(
-                                        discountType == 'fixed'
-                                            ? Icons.attach_money
-                                            : Icons.percent,
-                                      ),
-                                    ),
-                                    onChanged: (_) => updateInvoice(),
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    discountType == 'fixed'
-                                        ? Icons.percent
-                                        : Icons.attach_money,
-                                  ),
-                                  onPressed: toggleDiscountType,
-                                  tooltip: 'تبديل نوع الخصم',
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              discountType == 'fixed'
-                                  ? 'خصم بقيمة ثابتة'
-                                  : 'خصم بنسبة مئوية',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // المبلغ المدفوع
+                    SizedBox(height: 20),
                     TextFormField(
                       controller: amountController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'المبلغ المدفوع',
+                      decoration: InputDecoration(
+                        labelText: 'المبلغ المسترد',
                         suffixText: 'د.ر',
                         border: OutlineInputBorder(),
                       ),
@@ -464,45 +366,90 @@ class _POSScreenState extends State<POSScreen> {
                         });
                       },
                     ),
-
-                    const SizedBox(height: 20),
-
-                    // ملخص الفاتورة
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    SizedBox(height: 20),
+                    TextFormField(
+                      controller: notesController,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: 'ملاحظات الإرجاع',
+                        border: OutlineInputBorder(),
+                        hintText: 'سبب الإرجاع',
+                      ),
+                    ),
+                    SizedBox(height: 20),
+                    Row(
                       children: [
                         Text(
-                          'إجمالي الفاتورة: ${invoiceTotal.toStringAsFixed(2)} د.ر',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          'إرفاق صور:',
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          'الخصم: ${invoiceDiscount.toStringAsFixed(2)} د.ر',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                          ),
+                        SizedBox(width: 10),
+                        IconButton(
+                          icon: Icon(Icons.photo_library, color: Colors.blue),
+                          onPressed: pickImages,
+                          tooltip: 'اختر من المعرض',
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          'الإجمالي بعد الخصم: ${invoiceAfterDiscount.toStringAsFixed(2)} د.ر',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'المتبقي: ${(invoiceAfterDiscount - paidAmount).toStringAsFixed(2)} د.ر',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color:
-                                (invoiceAfterDiscount - paidAmount) > 0
-                                    ? Colors.red
-                                    : Colors.green,
-                          ),
+                        IconButton(
+                          icon: Icon(Icons.camera_alt, color: Colors.green),
+                          onPressed: takePhoto,
+                          tooltip: 'التقاط صورة',
                         ),
                       ],
+                    ),
+                    if (attachedImages.isNotEmpty)
+                      SizedBox(
+                        height: 100,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: attachedImages.length,
+                          itemBuilder: (context, index) {
+                            return Stack(
+                              children: [
+                                Container(
+                                  width: 100,
+                                  height: 100,
+                                  margin: EdgeInsets.only(right: 8),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    image: DecorationImage(
+                                      image: FileImage(attachedImages[index]),
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 0,
+                                  right: 0,
+                                  child: IconButton(
+                                    icon: Icon(
+                                      Icons.close,
+                                      size: 20,
+                                      color: Colors.red,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        attachedImages.removeAt(index);
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    SizedBox(height: 20),
+                    Text(
+                      'إجمالي المبلغ المرتجع: ${invoiceTotal.toStringAsFixed(2)} د.ر',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      'المستحق للعميل: ${(invoiceTotal - paidAmount).toStringAsFixed(2)} د.ر',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
                     ),
                   ],
                 ),
@@ -510,43 +457,64 @@ class _POSScreenState extends State<POSScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('إلغاء'),
+                  child: Text('إلغاء'),
                 ),
                 FilledButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (amountController.text.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('الرجاء إدخال مبلغ الدفع'),
-                        ),
+                        SnackBar(content: Text('الرجاء إدخال المبلغ')),
+                      );
+                      return;
+                    }
+                    if (notesController.text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('الرجاء إدخال سبب الإرجاع')),
                       );
                       return;
                     }
 
                     final paid = double.tryParse(amountController.text) ?? 0.0;
-                    if (paid < 0) {
+                    final rounded = paid.roundToDouble();
+                    if (rounded < 0) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
+                        SnackBar(
                           content: Text('المبلغ يجب أن يكون أكبر من الصفر'),
                         ),
                       );
                       return;
                     }
 
+                    // رفع الصور إلى السيرفر والحصول على روابطها
+                    List<String> imageUrls = [];
+                    if (attachedImages.isNotEmpty) {
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder:
+                            (context) =>
+                                Center(child: CircularProgressIndicator()),
+                      );
+
+                      try {
+                        for (var image in attachedImages) {
+                          final url = await VisitService.uploadImage(image);
+                          imageUrls.add(url);
+                        }
+                      } finally {
+                        Navigator.pop(context);
+                      }
+                    }
+
                     Navigator.pop(context, {
                       'mode_of_payment': selectedMethod,
-                      'paid_amount': paid,
-                      'outstanding_amount': invoiceAfterDiscount - paid,
-                      'discount_amount':
-                          discountType == 'fixed' ? invoiceDiscount : null,
-                      'additional_discount_percentage':
-                          discountType == 'percentage'
-                              ? double.tryParse(discountController.text) ?? 0.0
-                              : null,
-                      'total_after_discount': invoiceAfterDiscount,
+                      'paid_amount': rounded,
+                      'outstanding_amount': invoiceTotal - rounded,
+                      'notes': notesController.text,
+                      'attached_images': imageUrls, // روابط الصور المرفوعة
                     });
                   },
-                  child: const Text('تأكيد الدفع'),
+                  child: Text('تأكيد الإرجاع'),
                 ),
               ],
             );
@@ -684,7 +652,7 @@ class _POSScreenState extends State<POSScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'سلة المشتريات',
+                  'سلة المرتجعات',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 Container(
@@ -953,24 +921,20 @@ class _POSScreenState extends State<POSScreen> {
   //---------------------------------------------------//
   Future<void> _showEditItemDialog(BuildContext context, int index) async {
     final item = cartItems[index];
-    var originalPrice = item['original_price'] ?? item['price'];
+    final TextEditingController quantityController = TextEditingController(
+      text: item['quantity'].toString(),
+    );
+    final TextEditingController priceController = TextEditingController(
+      text: item['price'].toStringAsFixed(2),
+    );
 
-    final controllers = {
-      'quantity': TextEditingController(text: item['quantity'].toString()),
-      'price': TextEditingController(text: item['price'].toStringAsFixed(2)),
-      'discount': TextEditingController(
-        text:
-            (item['discount_amount'] ?? item['discount_percentage'] ?? 0)
-                .toString(),
-      ),
-    };
-
+    // 1. البيانات الأساسية
     String selectedUnit = item['uom'] ?? item['stock_uom'] ?? 'وحدة';
-    String discountType =
-        item['discount_amount'] != null ? 'amount' : 'percentage';
-    bool isLoading = false;
+    double currentPrice = item['price'];
+    String itemCode = item['item_name']?.toString() ?? '';
+    String priceList = 'البيع القياسية';
 
-    // قائمة الوحدات المتاحة
+    // 2. قائمة الوحدات المتاحة
     Set<String> availableUnits = {item['stock_uom']?.toString() ?? 'وحدة'};
     if (item['additionalUOMs'] != null) {
       availableUnits.addAll(
@@ -983,25 +947,10 @@ class _POSScreenState extends State<POSScreen> {
     await showDialog(
       context: context,
       builder: (context) {
+        bool isLoading = false;
+
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            void updatePrice() {
-              final discountValue =
-                  double.tryParse(controllers['discount']!.text) ?? 0;
-              double newPrice = originalPrice;
-
-              if (discountType == 'percentage') {
-                newPrice = originalPrice * (1 - discountValue / 100);
-              } else {
-                newPrice = originalPrice - discountValue;
-              }
-
-              if (newPrice < 0) newPrice = 0;
-
-              controllers['price']!.text = newPrice.toStringAsFixed(2);
-            }
-
-            // دالة تحديث السعر عند تغيير الوحدة
             Future<void> updatePriceForNewUnit(String? newUnit) async {
               if (newUnit == null || newUnit == selectedUnit) return;
 
@@ -1009,16 +958,16 @@ class _POSScreenState extends State<POSScreen> {
 
               try {
                 final newPrice = await _getItemPriceForUnit(
-                  item['name']?.toString() ?? '',
+                  itemCode,
                   newUnit,
-                  'البيع القياسية',
+                  priceList,
                 );
 
                 if (context.mounted) {
                   setStateDialog(() {
                     selectedUnit = newUnit;
-                    originalPrice = newPrice ?? originalPrice;
-                    updatePrice(); // تحديث السعر مع تطبيق الخصم الحالي
+                    currentPrice = newPrice ?? currentPrice;
+                    priceController.text = currentPrice.toStringAsFixed(2);
                   });
                 }
               } catch (e) {
@@ -1034,42 +983,21 @@ class _POSScreenState extends State<POSScreen> {
               }
             }
 
-            // دالة حساب السعر بعد الخصم
-
-            void toggleDiscountType() {
-              setStateDialog(() {
-                discountType =
-                    discountType == 'percentage' ? 'amount' : 'percentage';
-                updatePrice();
-              });
-            }
-
             return AlertDialog(
-              title: const Text('تعديل العنصر'),
+              title: Text('تعديل العنصر'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // حقل الكمية
                     TextFormField(
-                      controller: controllers['quantity'],
+                      controller: quantityController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'الكمية',
                         border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.format_list_numbered),
                       ),
-                      onChanged: (value) {
-                        final qty = int.tryParse(value) ?? 1;
-                        if (qty <= 0) {
-                          controllers['quantity']!.text = '1';
-                        }
-                      },
                     ),
-
-                    const SizedBox(height: 16),
-
-                    // اختيار الوحدة
+                    SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: selectedUnit,
                       items:
@@ -1080,92 +1008,26 @@ class _POSScreenState extends State<POSScreen> {
                             );
                           }).toList(),
                       onChanged: updatePriceForNewUnit,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'الوحدة',
                         border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.scale),
                       ),
                     ),
-
-                    const SizedBox(height: 16),
-
-                    // قسم الخصم
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: controllers['discount'],
-                                    keyboardType: TextInputType.number,
-                                    decoration: InputDecoration(
-                                      labelText:
-                                          discountType == 'percentage'
-                                              ? 'نسبة الخصم %'
-                                              : 'قيمة الخصم',
-                                      border: const OutlineInputBorder(),
-                                      prefixIcon: Icon(
-                                        discountType == 'percentage'
-                                            ? Icons.percent
-                                            : Icons.attach_money,
-                                      ),
-                                    ),
-                                    onChanged: (_) => updatePrice(),
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    discountType == 'percentage'
-                                        ? Icons.percent
-                                        : Icons.currency_exchange,
-                                  ),
-                                  onPressed: toggleDiscountType,
-                                  tooltip: 'تبديل نوع الخصم',
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              discountType == 'percentage'
-                                  ? 'يتم تطبيق الخصم كنسبة مئوية'
-                                  : 'يتم تطبيق الخصم كمبلغ ثابت',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // عرض السعر النهائي
+                    SizedBox(height: 16),
                     Stack(
                       alignment: Alignment.centerRight,
                       children: [
-                        ListTile(
-                          leading: const Icon(
-                            Icons.price_change,
-                            color: Colors.green,
-                          ),
-                          title: const Text('السعر النهائي'),
-                          subtitle: Text(
-                            'السعر الأصلي: ${originalPrice.toStringAsFixed(2)}',
-                          ),
-                          trailing: Text(
-                            controllers['price']!.text,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
+                        TextFormField(
+                          controller: priceController,
+                          readOnly: true,
+                          decoration: InputDecoration(
+                            labelText: 'السعر',
+                            border: OutlineInputBorder(),
                           ),
                         ),
                         if (isLoading)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 16),
+                          Padding(
+                            padding: EdgeInsets.only(right: 8),
                             child: SizedBox(
                               width: 20,
                               height: 20,
@@ -1180,41 +1042,32 @@ class _POSScreenState extends State<POSScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('إلغاء'),
+                  child: Text('إلغاء'),
                 ),
                 FilledButton(
                   onPressed: () {
                     final newQuantity =
-                        int.tryParse(controllers['quantity']!.text) ?? 1;
-                    final discountValue =
-                        double.tryParse(controllers['discount']!.text) ?? 0;
-
-                    if (newQuantity <= 0) {
+                        int.tryParse(quantityController.text) ?? 1;
+                    if (newQuantity > 0) {
+                      setState(() {
+                        cartItems[index] = {
+                          ...cartItems[index],
+                          'quantity': newQuantity,
+                          'uom': selectedUnit,
+                          'price': currentPrice,
+                        };
+                        total = calculateTotal();
+                      });
+                      Navigator.pop(context);
+                    } else {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
+                        SnackBar(
                           content: Text('الكمية يجب أن تكون أكبر من الصفر'),
                         ),
                       );
-                      return;
                     }
-
-                    setState(() {
-                      cartItems[index] = {
-                        ...cartItems[index],
-                        'quantity': newQuantity,
-                        'uom': selectedUnit,
-                        'price': double.parse(controllers['price']!.text),
-                        'original_price': originalPrice,
-                        'discount_amount':
-                            discountType == 'amount' ? discountValue : null,
-                        'discount_percentage':
-                            discountType == 'percentage' ? discountValue : null,
-                      };
-                      total = calculateTotal();
-                    });
-                    Navigator.pop(context);
                   },
-                  child: const Text('حفظ التغييرات'),
+                  child: Text('حفظ'),
                 ),
               ],
             );

@@ -1,0 +1,280 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../models/customer.dart';
+import '../models/customer_outstanding.dart';
+import '../models/payment_entry.dart';
+import '../services/customer_service.dart';
+import '../services/customer_outstanding_service.dart';
+import '../services/payment_entry_service.dart';
+
+class CreatePaymentPage extends StatefulWidget {
+  const CreatePaymentPage({super.key});
+
+  @override
+  _CreatePaymentPageState createState() => _CreatePaymentPageState();
+}
+
+class _CreatePaymentPageState extends State<CreatePaymentPage> {
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _paidAmountCtrl = TextEditingController();
+
+  List<Customer> _allCustomers = [];
+  List<Customer> _filteredCustomers = [];
+  bool _showList = false;
+
+  Customer? _selectedCustomer;
+  CustomerOutstanding? _selectedBalance;
+  List<Map<String, String>> _modes = [];
+  String? _selectedMode;
+  String? _selectedAccount;
+  String? _selectedCurrency;
+  bool _modesLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_filterCustomers);
+    _loadModes();
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_filterCustomers);
+    _searchController.dispose();
+    _paidAmountCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadModes() async {
+    try {
+      _modes = await PaymentEntryService.fetchModesOfPayment();
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطأ في تحميل طرق الدفع: \$e')));
+    } finally {
+      setState(() => _modesLoading = false);
+    }
+  }
+
+  void _filterCustomers() {
+    final query = _searchController.text.toLowerCase();
+    final filtered =
+        _allCustomers.where((customer) {
+          final name = customer.customerName.toLowerCase() ?? '';
+          return name.contains(query);
+        }).toList();
+
+    setState(() {
+      _filteredCustomers = filtered;
+    });
+  }
+
+  Future<void> _loadCustomers() async {
+    try {
+      final customers = await CustomerService.getCustomers();
+      setState(() {
+        _allCustomers = customers;
+        _filteredCustomers = customers;
+        _showList = true;
+      });
+    } catch (e) {
+      print('Error loading customers: \$e');
+    }
+  }
+
+  Future<void> _onCustomerSelected(Customer customer) async {
+    setState(() {
+      _selectedCustomer = customer;
+      _showList = false;
+      _searchController.text = customer.customerName ?? customer.name ?? '';
+      _selectedBalance = null;
+    });
+
+    try {
+      final balance = await CustomerOutstandingService.fetchCustomerOutstanding(
+        customer.name ?? '',
+        DateTime.now().toIso8601String().substring(0, 10),
+      );
+      setState(() {
+        _selectedBalance = balance;
+      });
+    } catch (e) {
+      print('Error fetching balance: \$e');
+      setState(() => _selectedBalance = null);
+    }
+  }
+
+  Future<void> _pickMode() async {
+    final choice = await showModalBottomSheet<Map<String, String>>(
+      context: context,
+      builder:
+          (ctx) => ListView(
+            children:
+                _modes
+                    .map(
+                      (m) => ListTile(
+                        title: Text(m['mode']!),
+                        onTap: () => Navigator.pop(ctx, m),
+                      ),
+                    )
+                    .toList(),
+          ),
+    );
+    if (choice != null) {
+      setState(() {
+        _selectedMode = choice['mode'];
+        _selectedAccount = choice['account'];
+        _selectedCurrency = choice['currency'];
+      });
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_selectedCustomer == null || _selectedMode == null) return;
+    final text = _paidAmountCtrl.text;
+    if (text.isEmpty || double.tryParse(text) == null) return;
+
+    final amount = double.parse(text);
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final series = 'PE-\$timestamp';
+
+    final entry = PaymentEntry(
+      paymentType: 'Receive',
+      namingSeries: '',
+      company: 'HR',
+      modeOfPayment: _selectedMode!,
+      partyType: 'Customer',
+      party: _selectedCustomer!.name,
+      partyName: _selectedCustomer!.customerName,
+      paidFrom: '1310 - مدينون - HR',
+      paidFromAccountCurrency: 'LYD',
+      paidTo: _selectedAccount!,
+      referenceNo: 'null',
+      paidToAccountCurrency: _selectedCurrency!,
+      referenceDate: DateFormat('yyyy-MM-dd').format(DateTime.now()),
+      receivedAmount: amount,
+      paidAmount: amount,
+      title: _selectedCustomer!.customerName,
+      remarks: '',
+    );
+
+    try {
+      await PaymentEntryService.createPayment(entry);
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطأ في الحفظ: \$e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Create Payment')),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Search bar
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search Customer',
+                suffixIcon: Icon(Icons.search),
+              ),
+              onTap: () {
+                if (!_showList) _loadCustomers();
+              },
+            ),
+            SizedBox(height: 16),
+            // Customer list or selected details
+            if (_showList)
+              Expanded(
+                child:
+                    _filteredCustomers.isEmpty
+                        ? Center(child: Text('No customers found'))
+                        : ListView.builder(
+                          itemCount: _filteredCustomers.length,
+                          itemBuilder: (context, index) {
+                            final customer = _filteredCustomers[index];
+                            return ListTile(
+                              title: Text(
+                                customer.customerName ?? customer.name ?? '',
+                              ),
+                              onTap: () => _onCustomerSelected(customer),
+                            );
+                          },
+                        ),
+              )
+            else if (_selectedCustomer != null) ...[
+              Text(
+                'Selected Customer:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Text(_selectedCustomer!.customerName),
+              SizedBox(height: 16),
+              // Outstanding
+              if (_selectedBalance != null)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Outstanding Balance:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 8),
+                    Text(_selectedBalance!.outstanding.toStringAsFixed(2)),
+                    SizedBox(height: 16),
+                    // Mode of Payment picker
+                    _modesLoading
+                        ? CircularProgressIndicator()
+                        : GestureDetector(
+                          onTap: _pickMode,
+                          child: InputDecorator(
+                            decoration: InputDecoration(
+                              labelText: 'Mode of Payment',
+                              border: OutlineInputBorder(),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(_selectedMode ?? 'Select mode'),
+                                Icon(Icons.arrow_drop_down),
+                              ],
+                            ),
+                          ),
+                        ),
+                    SizedBox(height: 16),
+                    // Paid amount field
+                    TextField(
+                      controller: _paidAmountCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Paid Amount',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    SizedBox(height: 24),
+                    // Submit button
+                    ElevatedButton(
+                      onPressed: _submit,
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: Size.fromHeight(48),
+                      ),
+                      child: Text('Submit'),
+                    ),
+                  ],
+                )
+              else
+                Text('Loading balance...'),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

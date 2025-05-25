@@ -72,4 +72,31 @@ class CustomerOutstandingService {
     print('Filtered out zeros, remaining: ${nonZero.length}');
     return nonZero;
   }
+
+  static Future<CustomerOutstanding> fetchCustomerOutstanding(
+    String customer,
+    final date,
+  ) async {
+    final date = DateTime.now().toIso8601String().substring(
+      0,
+      10,
+    ); // yyyy-MM-dd
+    final endpoint =
+        '/api/method/erpnext.accounts.utils.get_balance_on?date=$date&party_type=Customer&party=$customer';
+    print('→ [Service] GET $endpoint');
+
+    final res = await ApiClient.get(endpoint);
+    print('← [Service] status: ${res.statusCode}');
+    print('← [Service] body: ${res.body}');
+
+    if (res.statusCode == 200) {
+      final msg = jsonDecode(res.body)['message'];
+      final balance = double.tryParse(msg.toString()) ?? 0.0;
+      return CustomerOutstanding(name: customer, outstanding: balance);
+    } else if (res.statusCode == 403 || res.body.contains('login')) {
+      throw Exception('Session expired. Please log in again.');
+    } else {
+      throw Exception('Failed to fetch outstanding balance for $customer');
+    }
+  }
 }

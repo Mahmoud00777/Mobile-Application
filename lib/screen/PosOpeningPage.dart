@@ -12,26 +12,30 @@ class PosOpeningPage extends StatefulWidget {
 }
 
 class _PosOpeningPageState extends State<PosOpeningPage> {
-  final TextEditingController _cashController = TextEditingController();
   List<Map<String, dynamic>> posProfiles = [];
   Map<String, dynamic>? selectedPOSProfile;
   String? selectedPOSProfileName;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadPOSProfiles();
+    _loadData();
   }
 
-  Future<void> _loadPOSProfiles() async {
+  Future<void> _loadData() async {
     try {
       final profiles = await PosService.getUserPOSProfiles();
       setState(() {
         posProfiles = profiles;
+        _isLoading = false;
       });
       await _loadSavedPOSProfile();
     } catch (e) {
-      print('خطأ في تحميل POS Profiles: $e');
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في تحميل البيانات: ${e.toString()}')),
+      );
     }
   }
 
@@ -39,56 +43,52 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('selected_pos_profile');
     if (saved != null) {
-      final decoded = jsonDecode(saved);
       setState(() {
-        selectedPOSProfile = decoded;
+        selectedPOSProfile = jsonDecode(saved);
+        selectedPOSProfileName = selectedPOSProfile?['name'];
       });
     }
   }
 
-  Future<void> _saveSelectedPOSProfile(Map<String, dynamic> profile) async {
+  Future<void> _saveSelectedPOSProfile() async {
+    if (selectedPOSProfile == null) return;
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('selected_pos_profile', jsonEncode(profile));
+    await prefs.setString(
+      'selected_pos_profile',
+      jsonEncode(selectedPOSProfile),
+    );
   }
 
-  void _submitOpening(BuildContext context) async {
-    final cash = _cashController.text.trim();
-    if (cash.isEmpty || selectedPOSProfile == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى إدخال المبلغ واختيار POS Profile')),
-      );
+  Future<void> _submitOpening() async {
+    if (selectedPOSProfile == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('يرجى اختيار POS Profile')));
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+    setState(() => _isLoading = true);
 
     try {
       final hasOpen = await PosService.hasOpenPosEntry();
       if (hasOpen) {
-        Navigator.of(context).pop();
-        Navigator.of(
+        Navigator.pushReplacement(
           context,
-        ).pushReplacement(MaterialPageRoute(builder: (_) => HomePage()));
+          MaterialPageRoute(builder: (_) => HomePage()),
+        );
         return;
       }
 
-      final amount = double.tryParse(cash) ?? 0.0;
-      await _saveSelectedPOSProfile(selectedPOSProfile!); // حفظ البيانات
-      await PosService.createOpeningEntry(
-        amount,
-        selectedPOSProfile!,
-      ); // إرسال البيانات المختارة
+      await _saveSelectedPOSProfile();
+      await PosService.createOpeningEntry(0, selectedPOSProfile!);
 
-      Navigator.of(context).pop();
-      Navigator.of(
+      Navigator.pushReplacement(
         context,
-      ).pushReplacement(MaterialPageRoute(builder: (_) => HomePage()));
+        MaterialPageRoute(builder: (_) => HomePage()),
+      );
     } catch (e) {
-      Navigator.of(context).pop();
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('خطأ: ${e.toString()}')));
@@ -98,53 +98,101 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('فتح نقطة البيع')),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            const Text(
-              'يرجى إدخال المبلغ الابتدائي واختيار POS Profile',
-              style: TextStyle(fontSize: 18),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _cashController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'المبلغ النقدي الابتدائي',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 20),
-            DropdownButton<String>(
-              value: selectedPOSProfileName,
-              hint: Text('اختر POS Profile'),
-              onChanged: (String? newValue) {
-                setState(() {
-                  selectedPOSProfileName = newValue;
-                  selectedPOSProfile = posProfiles.firstWhere(
-                    (p) => p['name'] == newValue,
-                    orElse: () => {},
-                  );
-                });
-              },
-              items:
-                  posProfiles.map((profile) {
-                    return DropdownMenuItem<String>(
-                      value: profile['name'],
-                      child: Text(profile['name']),
-                    );
-                  }).toList(),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () => _submitOpening(context),
-              child: const Text('فتح نقطة البيع'),
-            ),
-          ],
-        ),
+      appBar: AppBar(
+        title: const Text('فتح نقطة البيع'),
+        centerTitle: true,
+        elevation: 0,
       ),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 20),
+                    const Text(
+                      'اختر نقطة البيع لبدء الوردية',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 40),
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'نقطة البيع المتاحة',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            DropdownButtonFormField<String>(
+                              value: selectedPOSProfileName,
+                              decoration: InputDecoration(
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                              ),
+                              hint: const Text('اختر نقطة البيع'),
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  selectedPOSProfileName = newValue;
+                                  selectedPOSProfile = posProfiles.firstWhere(
+                                    (p) => p['name'] == newValue,
+                                  );
+                                });
+                              },
+                              items:
+                                  posProfiles.map((profile) {
+                                    return DropdownMenuItem<String>(
+                                      value: profile['name'],
+                                      child: Text(profile['name']),
+                                    );
+                                  }).toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _submitOpening,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child:
+                          _isLoading
+                              ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                              : const Text(
+                                'بدء الوردية',
+                                style: TextStyle(fontSize: 18),
+                              ),
+                    ),
+                  ],
+                ),
+              ),
     );
   }
 }
