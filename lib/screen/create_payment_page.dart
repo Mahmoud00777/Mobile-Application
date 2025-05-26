@@ -1,3 +1,4 @@
+import 'package:drsaf/services/payment_service_list.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/customer.dart';
@@ -29,12 +30,17 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
   String? _selectedAccount;
   String? _selectedCurrency;
   bool _modesLoading = true;
+  List<Map<String, dynamic>> _paymentMethods = [];
+  bool _isLoading = true;
+  String? _selectedMethod;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_filterCustomers);
     _loadModes();
+    _loadPaymentMethods();
   }
 
   @override
@@ -80,6 +86,99 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
       });
     } catch (e) {
       print('Error loading customers: \$e');
+    }
+  }
+
+  Future<void> _loadPaymentMethods() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final methods = await PaymentService.getPosPaymentMethods();
+      setState(() {
+        _paymentMethods = methods;
+        if (methods.isNotEmpty) {
+          _selectedMethod = methods.first['mode_of_payment']?.toString();
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'فشل في تحميل طرق الدفع: ${e.toString()}';
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _selectPaymentMethod() async {
+    if (_paymentMethods.isEmpty) return;
+
+    final selectedMode = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => _buildMethodsBottomSheet(),
+    );
+
+    if (selectedMode != null) {
+      setState(() => _isLoading = true);
+
+      try {
+        final defaultAccount = await PaymentService.getDefaultAccount(
+          selectedMode,
+        );
+
+        setState(() {
+          _selectedMethod = selectedMode;
+          _selectedAccount = defaultAccount;
+        });
+      } catch (e) {
+        setState(() {
+          _errorMessage = 'فشل في جلب الحساب الافتراضي';
+        });
+      } finally {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Widget _buildMethodsBottomSheet() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'اختر طريقة الدفع',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+        const Divider(height: 1),
+        ..._paymentMethods.map(
+          (method) => ListTile(
+            leading: Icon(_getMethodIcon(method['type'])),
+            title: Text(method['mode_of_payment'] ?? 'غير معروف'),
+            subtitle:
+                method['description'] != null
+                    ? Text(method['description'])
+                    : null,
+            onTap: () => Navigator.pop(context, method['mode_of_payment']),
+          ),
+        ),
+      ],
+    );
+  }
+
+  IconData _getMethodIcon(String? type) {
+    switch (type?.toLowerCase()) {
+      case 'cash':
+        return Icons.money;
+      case 'card':
+        return Icons.credit_card;
+      case 'bank':
+        return Icons.account_balance;
+      default:
+        return Icons.payment;
     }
   }
 
@@ -131,7 +230,7 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
   }
 
   Future<void> _submit() async {
-    if (_selectedCustomer == null || _selectedMode == null) return;
+    if (_selectedCustomer == null || _selectedMethod == null) return;
     final text = _paidAmountCtrl.text;
     if (text.isEmpty || double.tryParse(text) == null) return;
 
@@ -143,7 +242,7 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
       paymentType: 'Receive',
       namingSeries: '',
       company: 'HR',
-      modeOfPayment: _selectedMode!,
+      modeOfPayment: _selectedMethod!,
       partyType: 'Customer',
       party: _selectedCustomer!.name,
       partyName: _selectedCustomer!.customerName,
@@ -151,7 +250,7 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
       paidFromAccountCurrency: 'LYD',
       paidTo: _selectedAccount!,
       referenceNo: 'null',
-      paidToAccountCurrency: _selectedCurrency!,
+      paidToAccountCurrency: 'LYD',
       referenceDate: DateFormat('yyyy-MM-dd').format(DateTime.now()),
       receivedAmount: amount,
       paidAmount: amount,
@@ -230,20 +329,31 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
                     Text(_selectedBalance!.outstanding.toStringAsFixed(2)),
                     SizedBox(height: 16),
                     // Mode of Payment picker
-                    _modesLoading
-                        ? CircularProgressIndicator()
+                    _isLoading
+                        ? const CircularProgressIndicator()
+                        : _paymentMethods.isEmpty
+                        ? const Text('لا توجد طرق دفع متاحة')
                         : GestureDetector(
-                          onTap: _pickMode,
-                          child: InputDecorator(
-                            decoration: InputDecoration(
-                              labelText: 'Mode of Payment',
-                              border: OutlineInputBorder(),
+                          onTap: _selectPaymentMethod,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey),
+                              borderRadius: BorderRadius.circular(8),
                             ),
+                            padding: const EdgeInsets.all(12),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(_selectedMode ?? 'Select mode'),
-                                Icon(Icons.arrow_drop_down),
+                                Text(
+                                  _selectedMethod ?? 'اختر طريقة الدفع',
+                                  style: TextStyle(
+                                    color:
+                                        _selectedMethod == null
+                                            ? Colors.grey
+                                            : Colors.black,
+                                  ),
+                                ),
+                                const Icon(Icons.arrow_drop_down),
                               ],
                             ),
                           ),

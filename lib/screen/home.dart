@@ -3,6 +3,7 @@ import 'package:drsaf/screen/login.dart';
 import 'package:drsaf/screen/payment_entry_list_page.dart';
 import 'package:drsaf/screen/pos.dart';
 import 'package:drsaf/screen/pos_return.dart';
+import 'package:drsaf/screen/reports.dart';
 import 'package:drsaf/screen/store_screen.dart';
 import 'package:drsaf/screen/visit.dart';
 import 'package:drsaf/services/auth_service.dart';
@@ -604,19 +605,20 @@ class _HomePageState extends State<HomePage> with RouteAware {
           case 'STORE':
             targetScreen = const MaterialStoreScreen();
             break;
+          case 'REPORTS':
+            targetScreen = const ReportsScreen();
+            break;
           default:
             print('${button['label']} pressed');
             return;
         }
 
-        if (targetScreen != null) {
-          await navigator.push(
-            MaterialPageRoute(builder: (context) => targetScreen!),
-          );
+        await navigator.push(
+          MaterialPageRoute(builder: (context) => targetScreen!),
+        );
 
-          if (mounted) {
-            await _loadStatistics();
-          }
+        if (mounted) {
+          await _loadStatistics();
         }
       },
       child: Column(

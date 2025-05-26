@@ -20,7 +20,7 @@ class MaterialStoreDetailPage extends StatefulWidget {
 class _MaterialStoreDetailPageState extends State<MaterialStoreDetailPage> {
   late Future<MaterialRequest> _requestFuture;
   bool _isApproving = false;
-  bool _isRejecting = false;
+  final bool _isRejecting = false;
 
   @override
   void initState() {

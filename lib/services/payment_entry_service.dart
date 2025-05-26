@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/payment_entry.dart';
 import 'api_client.dart';
 
@@ -68,9 +70,25 @@ class PaymentEntryService {
 
   /// 3. Post a new Payment Entry record
   static Future<void> createPayment(PaymentEntry entry) async {
+    final prefs = await SharedPreferences.getInstance();
+    final posProfileJson = prefs.getString('selected_pos_profile');
+    final openShiftId = prefs.getString('pos_open');
+    final posProfile = json.decode(posProfileJson!);
+    final posProfileName = posProfile['name'] ?? 'Default POS Profile';
+
     final data = entry.toJson();
+    final enrichedData = {
+      ...data,
+      'docstatus': 1,
+      'custom_pos_profile': posProfileName,
+      'custom_pos_opening_shift': openShiftId,
+    };
+
     print('→ [Service] createPayment data: $data');
-    final res = await ApiClient.postJson('/api/resource/Payment Entry', data);
+    final res = await ApiClient.postJson(
+      '/api/resource/Payment Entry',
+      enrichedData,
+    );
     print('← [Service] createPayment status: ${res.statusCode}');
     print('← [Service] createPayment body: ${res.body}');
     if (res.statusCode != 200 && res.statusCode != 201) {
