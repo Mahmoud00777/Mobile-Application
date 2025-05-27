@@ -123,14 +123,18 @@ class _POSScreenState extends State<POSScreen> {
     setState(() {
       filteredProducts =
           products.where((product) {
-            final matchesSearch = product.itemName.toLowerCase().contains(
-              searchTerm,
-            );
-            product.name.toLowerCase().contains(searchTerm);
-            final matchesGroup = selectedItemGroup == null;
-            selectedItemGroup!.isEmpty;
-            product.itemGroup == selectedItemGroup;
+            // 1. مطابقة اسم المنتج مع نص البحث
+            final matchesSearch =
+                product.itemName.toLowerCase().contains(searchTerm) ||
+                product.name.toLowerCase().contains(searchTerm);
 
+            // 2. مطابقة مجموعة المنتج (إذا تم تحديد مجموعة)
+            final matchesGroup =
+                selectedItemGroup == null ||
+                selectedItemGroup!.isEmpty ||
+                product.itemGroup == selectedItemGroup;
+
+            // 3. يجب أن تطابق شروط البحث والمجموعة معاً
             return matchesSearch && matchesGroup;
           }).toList();
     });

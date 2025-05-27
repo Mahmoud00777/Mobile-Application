@@ -169,7 +169,6 @@ class PosService {
           'latitude': customer['latitude'],
           'longitude': customer['longitude'],
           'select_state': 'لم تتم زيارة',
-          'data_time': DateTime.now(),
         };
 
         final response = await ApiClient.postJson(
