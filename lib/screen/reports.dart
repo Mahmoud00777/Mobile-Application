@@ -1,3 +1,6 @@
+import 'package:drsaf/screen/bin_report_page.dart';
+import 'package:drsaf/screen/customer_ledger_summary_page.dart';
+import 'package:drsaf/screen/sales_invoice_summary_page.dart';
 import 'package:drsaf/screen/total_stock_summary_page.dart';
 import 'package:flutter/material.dart';
 
@@ -28,8 +31,8 @@ class ReportsScreen extends StatelessWidget {
             _buildReportButton(
               context,
               icon: Icons.bar_chart,
-              title: 'تقرير المبيعات',
-              onTap: () => _navigateToReport(context, 'sales'),
+              title: 'Sales Report',
+              onTap: () => _navigateToReport(context, 'Sales Report'),
             ),
             _buildReportButton(
               context,
@@ -46,8 +49,8 @@ class ReportsScreen extends StatelessWidget {
             _buildReportButton(
               context,
               icon: Icons.assignment_return,
-              title: 'تقرير المرتجعات',
-              onTap: () => _navigateToReport(context, 'returns'),
+              title: 'Outstanding',
+              onTap: () => _navigateToReport(context, 'Outstanding'),
             ),
           ],
         ),
@@ -98,7 +101,9 @@ class ReportsScreen extends StatelessWidget {
 
   void _navigateToReport(BuildContext context, String reportType) {
     final Map<String, Widget> reportScreens = {
-      'Stock Report': const TotalStockSummaryPage(),
+      'Stock Report': const BinReportPage(),
+      'Sales Report': const SalesInvoiceSummaryPage(),
+      'Outstanding': const CustomerLedgerPage(),
     };
 
     final Widget screen =
