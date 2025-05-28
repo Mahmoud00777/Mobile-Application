@@ -170,7 +170,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              inv.grandTotal.toStringAsFixed(2) + ' LYD',
+                              '${inv.grandTotal.toStringAsFixed(2)} LYD',
                               style: const TextStyle(fontSize: 16),
                             ),
                             Text(

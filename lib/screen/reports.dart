@@ -1,7 +1,6 @@
 import 'package:drsaf/screen/bin_report_page.dart';
 import 'package:drsaf/screen/customer_ledger_summary_page.dart';
 import 'package:drsaf/screen/sales_invoice_summary_page.dart';
-import 'package:drsaf/screen/total_stock_summary_page.dart';
 import 'package:flutter/material.dart';
 
 class ReportsScreen extends StatelessWidget {

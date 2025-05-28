@@ -4,7 +4,7 @@ import '../services/customer_ledger_service.dart';
 import 'package:intl/intl.dart';
 
 class CustomerLedgerPage extends StatefulWidget {
-  const CustomerLedgerPage({Key? key}) : super(key: key);
+  const CustomerLedgerPage({super.key});
 
   @override
   State<CustomerLedgerPage> createState() => _CustomerLedgerPageState();

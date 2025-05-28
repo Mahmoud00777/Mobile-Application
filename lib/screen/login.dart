@@ -12,9 +12,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.light(
-          primary: const Color.fromARGB(255, 156, 20, 20),
-        ),
+        colorScheme: ColorScheme.light(primary: const Color(0xFFBDB395)),
       ),
       home: const Login(),
     );
@@ -34,8 +32,12 @@ class _LoginState extends State<Login> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _rememberMe = false;
-  final bool _isLoading = false;
-  final Color primaryRed = const Color.fromARGB(255, 156, 20, 20);
+  bool _isLoading = false;
+
+  final Color primaryColor = const Color(0xFFBDB395);
+  final Color secondaryColor = Colors.white;
+  final Color backgroundColor = const Color(0xFFF6F0F0);
+  final Color pressedColor = const Color(0xFFF2E2B1);
 
   @override
   void dispose() {
@@ -51,10 +53,7 @@ class _LoginState extends State<Login> {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color.fromARGB(255, 142, 6, 6),
-              Color.fromARGB(255, 156, 20, 20),
-            ],
+            colors: [Color(0xFFBDB395), Color(0xFFBDB395)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -97,11 +96,11 @@ class _LoginState extends State<Login> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: primaryRed),
+                                borderSide: BorderSide(color: primaryColor),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            cursorColor: primaryRed,
+                            cursorColor: primaryColor,
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
@@ -113,11 +112,11 @@ class _LoginState extends State<Login> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: primaryRed),
+                                borderSide: BorderSide(color: primaryColor),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            cursorColor: primaryRed,
+                            cursorColor: primaryColor,
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
@@ -130,11 +129,11 @@ class _LoginState extends State<Login> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: primaryRed),
+                                borderSide: BorderSide(color: primaryColor),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            cursorColor: primaryRed,
+                            cursorColor: primaryColor,
                           ),
                           const SizedBox(height: 20),
                           Row(
@@ -144,11 +143,10 @@ class _LoginState extends State<Login> {
                                 children: [
                                   Checkbox(
                                     value: _rememberMe,
-                                    onChanged:
-                                        (value) => setState(
-                                          () => _rememberMe = value!,
-                                        ),
-                                    activeColor: primaryRed,
+                                    onChanged: (value) {
+                                      setState(() => _rememberMe = value!);
+                                    },
+                                    activeColor: primaryColor,
                                   ),
                                   const Text('تذكرني'),
                                 ],
@@ -157,7 +155,7 @@ class _LoginState extends State<Login> {
                                 onPressed: () {},
                                 child: Text(
                                   'نسيت كلمة المرور؟',
-                                  style: TextStyle(color: primaryRed),
+                                  style: TextStyle(color: primaryColor),
                                 ),
                               ),
                             ],
@@ -168,7 +166,7 @@ class _LoginState extends State<Login> {
                             height: 50,
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryRed,
+                                backgroundColor: primaryColor,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
@@ -207,6 +205,10 @@ class _LoginState extends State<Login> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
+    setState(() {
+      _isLoading = true;
+    });
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -229,16 +231,6 @@ class _LoginState extends State<Login> {
             MaterialPageRoute(builder: (_) => PosOpeningPage()),
           );
         } else {
-          // final name = hasOpenPOS['name'];
-          // final posTime = hasOpenPOS['period_start_date'];
-          // final prefs = await SharedPreferences.getInstance();
-          // await prefs.setString('pos_open', name);
-          // await prefs.setString('pos_time', posTime);
-          //        await prefs.setString(
-          //   'selected_pos_profile',
-          //   jsonEncode(selectedPOSProfile),
-          // );
-
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (context) => HomePage(showLoginSuccess: true),
@@ -262,6 +254,12 @@ class _LoginState extends State<Login> {
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }

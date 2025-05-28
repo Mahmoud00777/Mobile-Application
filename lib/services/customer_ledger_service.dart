@@ -55,7 +55,7 @@ class CustomerLedgerService {
       }
       // Now safely map only if each element is a Map
       return result
-          .where((e) => e is Map<String, dynamic>)
+          .whereType<Map<String, dynamic>>()
           .cast<Map<String, dynamic>>()
           .map(CustomerLedgerSummary.fromJsonMap)
           .toList();

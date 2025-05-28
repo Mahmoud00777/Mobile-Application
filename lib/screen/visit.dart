@@ -684,6 +684,7 @@ class _VisitScreenState extends State<VisitScreen> {
     );
     String selectedState = visit.select_state;
     bool isModified = false;
+    bool isCheckingLocation = false;
     print('_showVisitDetailsBottomSheet => visit: ${visit.name}');
 
     showModalBottomSheet(
@@ -729,9 +730,32 @@ class _VisitScreenState extends State<VisitScreen> {
                                   Navigator.pop(context);
                                   _refreshVisits();
                                 },
+                                style: TextButton.styleFrom(
+                                  backgroundColor:
+                                      Colors.green[50], // خلفية خضراء فاتحة
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      10,
+                                    ), // زوايا مدورة
+                                    side: BorderSide(
+                                      color: Colors.green,
+                                    ), // حد أخضر
+                                  ),
+                                  elevation: 3, // ظل خفيف
+                                ),
                                 child: Text(
                                   'حفظ',
-                                  style: TextStyle(color: primaryColor),
+                                  style: TextStyle(
+                                    color: Color(
+                                      0xFF014203,
+                                    ), // لون نص أخضر داكن
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
                                 ),
                               ),
                             IconButton(
@@ -815,32 +839,40 @@ class _VisitScreenState extends State<VisitScreen> {
                     ),
                   ),
 
-                  // أزرار إضافية
                   Padding(
-                    padding: EdgeInsets.all(16),
-                    // child: Row(
-                    //   children: [
-                    //     Expanded(
-                    //       child: OutlinedButton.icon(
-                    //         icon: Icon(Icons.delete, color: Colors.red),
-                    //         label: Text('حذف', style: TextStyle(color: Colors.red)),
-                    //         onPressed: () => _confirmDelete(context, visit),
-                    //       ),
-                    //     ),
-                    //     SizedBox(width: 10),
-                    //   //   Expanded(
-                    //   //     child: ElevatedButton.icon(
-                    //   //       icon: Icon(Icons.share, color: Colors.white),
-                    //   //       label: Text('مشاركة', style: TextStyle(color: Colors.white)),
-                    //   //       style: ElevatedButton.styleFrom(
-                    //   //         backgroundColor: primaryColor,
-                    //   //       ),
-                    //   //       onPressed: () => _shareVisitDetails(visit),
-                    //   //     ),
-                    //   //   ),
-                    //   // ],
-                    // ),
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: ElevatedButton.icon(
+                      icon: Icon(Icons.location_on),
+                      label: Text('تمت زيارة - التحقق من الموقع'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        minimumSize: Size(double.infinity, 50),
+                      ),
+                      onPressed: () async {
+                        setModalState(() => isCheckingLocation = true);
+                        await _verifyVisitLocation(
+                          context,
+                          visit,
+                          setModalState,
+                          (newState) {
+                            // دالة تحديث selectedState
+                            setModalState(() => selectedState = newState);
+                          },
+                          (modified) {
+                            // دالة تحديث isModified
+                            setModalState(() => isModified = modified);
+                          },
+                        );
+                        setModalState(() => isCheckingLocation = false);
+                      },
+                    ),
                   ),
+
+                  if (isCheckingLocation)
+                    Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(),
+                    ),
                 ],
               ),
             );
@@ -862,5 +894,128 @@ class _VisitScreenState extends State<VisitScreen> {
         ],
       ),
     );
+  }
+}
+
+Future<void> _verifyVisitLocation(
+  BuildContext context,
+  Visit visit,
+  StateSetter setModalState,
+  // أضف المتغيرات كمعاملات للدالة
+  Function(String) updateSelectedState,
+  Function(bool) updateIsModified,
+) async {
+  try {
+    // double? visitLat =
+    //     visit.latitude != null ? _dmsToDecimal(visit.latitude!) : null;
+    // double? visitLng =
+    //     visit.longitude != null ? _dmsToDecimal(visit.longitude!) : null;
+    final double? visitLat = double.tryParse(visit.latitude!);
+    final double? visitLng = double.tryParse(visit.longitude!);
+    final Position currentPosition = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+    print("-------------------------$currentPosition");
+    // if (visitLat == null || visitLng == null) {
+    //   print("no visit");
+    //   ScaffoldMessenger.of(context).showSnackBar(
+    //     const SnackBar(content: Text('لا توجد إحداثيات مخزنة لهذه الزيارة')),
+    //   );
+    //   return;
+    // }
+    print('visitLat = $visitLat');
+    print('visitLng = $visitLng');
+    print('currentPosition.latitude = ${currentPosition.latitude}');
+    print('currentPosition.longitude =${currentPosition.longitude}');
+
+    final double distance = Geolocator.distanceBetween(
+      visitLat!,
+      visitLng!,
+      currentPosition.latitude,
+      currentPosition.longitude,
+    );
+    print("visit222");
+
+    const double acceptableDistance = 200;
+    print('distance = $distance');
+    if (distance <= acceptableDistance) {
+      // استخدم الدوال الممررة لتعديل الحالة
+      updateSelectedState('تمت زيارة');
+      updateIsModified(true);
+      showDialog(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Text("نجاح"),
+              content: Text(
+                "تم التحقق من الموقع بنجاح - المسافة: ${distance.toStringAsFixed(1)} متر",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    updateSelectedState('تمت زيارة');
+                    updateIsModified(true);
+                  },
+                  child: Text("موافق"),
+                ),
+              ],
+            ),
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Text("تحذير"),
+              content: Text(
+                "أنت بعيد عن موقع الزيارة (${distance.toStringAsFixed(1)} متر)",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text("حاول مرة أخرى"),
+                ),
+              ],
+            ),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('خطأ في تحديد الموقع: ${e.toString()}')),
+    );
+  }
+}
+
+double? _dmsToDecimal(String dms) {
+  try {
+    // إزالة الرموز الزائدة
+    String cleaned = dms
+        .replaceAll('°', ' ')
+        .replaceAll('\'', ' ')
+        .replaceAll('"', ' ');
+    List<String> parts = cleaned.trim().split(RegExp(r'\s+'));
+
+    if (parts.isEmpty) return null;
+
+    double degrees = double.tryParse(parts[0]) ?? 0;
+    double minutes = parts.length > 1 ? double.tryParse(parts[1]) ?? 0 : 0;
+    double seconds = parts.length > 2 ? double.tryParse(parts[2]) ?? 0 : 0;
+
+    // التحويل إلى درجات عشرية
+    double decimal = degrees + (minutes / 60) + (seconds / 3600);
+
+    // تحديد الاتجاه (إذا كان هناك جزء رابع مثل N/S/E/W)
+    if (parts.length > 3) {
+      String direction = parts[3].toUpperCase();
+      if (direction == 'S' || direction == 'W') {
+        decimal = -decimal;
+      }
+    }
+
+    return decimal;
+  } catch (e) {
+    debugPrint('خطأ في تحويل الإحداثيات: $e');
+    return null;
   }
 }

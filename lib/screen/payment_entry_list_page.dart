@@ -2,7 +2,6 @@ import '../services/payment_service_list.dart';
 import 'package:flutter/material.dart';
 import '../models/payment_entry_list.dart';
 import 'create_payment_page.dart';
-// Import your payment entry creation page
 
 class PaymentEntryListPage extends StatefulWidget {
   const PaymentEntryListPage({super.key});
@@ -16,6 +15,8 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
   String _searchText = '';
   bool _isLoading = true;
   final _searchController = TextEditingController();
+  final Color primaryColor = const Color(0xFFBDB395);
+  final Color secondaryColor = Colors.white;
 
   @override
   void initState() {
@@ -31,9 +32,9 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
       );
       setState(() => _payments = payments);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString()), backgroundColor: primaryColor),
+      );
     } finally {
       setState(() => _isLoading = false);
     }
@@ -49,7 +50,11 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('دفعات العملاء')),
+      appBar: AppBar(
+        title: const Text('دفعات العملاء'),
+        backgroundColor: primaryColor,
+        iconTheme: IconThemeData(color: secondaryColor),
+      ),
       body: Column(
         children: [
           Padding(
@@ -59,9 +64,14 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
                 Expanded(
                   child: TextField(
                     controller: _searchController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'بحث باسم العميل...',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(
+                        borderSide: BorderSide(color: primaryColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: primaryColor),
+                      ),
                       contentPadding: EdgeInsets.symmetric(horizontal: 12),
                     ),
                     onSubmitted: (_) => _onSearch(),
@@ -71,6 +81,10 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: _onSearch,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: secondaryColor,
+                  ),
                   child: const Icon(Icons.search),
                 ),
               ],
@@ -79,11 +93,18 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
           Expanded(
             child:
                 _isLoading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? Center(
+                      child: CircularProgressIndicator(color: primaryColor),
+                    )
                     : _payments.isEmpty
-                    ? const Center(child: Text('لا توجد نتائج'))
+                    ? Center(
+                      child: Text(
+                        'لا توجد نتائج',
+                        style: TextStyle(color: primaryColor),
+                      ),
+                    )
                     : ListView.builder(
-                      itemCount: _payments.length + 1, // one extra for summary
+                      itemCount: _payments.length + 1,
                       itemBuilder: (ctx, i) {
                         if (i < _payments.length) {
                           final e = _payments[i];
@@ -92,6 +113,8 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
                               horizontal: 12,
                               vertical: 6,
                             ),
+                            color: secondaryColor,
+                            shape: RoundedRectangleBorder(),
                             child: ListTile(
                               title: Text(e.party),
                               subtitle: Column(
@@ -103,7 +126,8 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
                               ),
                               trailing: Text(
                                 e.paidAmount.toStringAsFixed(2),
-                                style: const TextStyle(
+                                style: TextStyle(
+                                  color: primaryColor,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                 ),
@@ -113,25 +137,27 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
                         } else {
                           return Card(
                             margin: const EdgeInsets.all(12),
-                            color: Colors.grey[200],
+                            color: primaryColor,
                             child: Padding(
                               padding: const EdgeInsets.all(16),
                               child: Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'إجمالي المدفوع',
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
+                                      color: secondaryColor,
                                     ),
                                   ),
                                   Text(
                                     totalPaid.toStringAsFixed(2),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
+                                      color: secondaryColor,
                                     ),
                                   ),
                                 ],
@@ -155,7 +181,8 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
                 MaterialPageRoute(builder: (_) => CreatePaymentPage()),
               );
             },
-            backgroundColor: Colors.blue,
+            backgroundColor: primaryColor,
+            foregroundColor: secondaryColor,
             child: const Icon(Icons.add),
           ),
         ),

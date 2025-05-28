@@ -4,7 +4,7 @@ import '../models/bin_report.dart';
 import '../services/bin_report_service.dart';
 
 class BinReportPage extends StatefulWidget {
-  const BinReportPage({Key? key}) : super(key: key);
+  const BinReportPage({super.key});
 
   @override
   _BinReportPageState createState() => _BinReportPageState();

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drsaf/services/api_client.dart';
 import 'package:drsaf/services/auth_service.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,13 +10,26 @@ class PosService {
   static Future<bool> hasOpenPosEntry() async {
     final user = await AuthService.getCurrentUser();
     // if (user == null) throw Exception('المستخدم غير معروف أو غير مسجل الدخول');
+    print(user);
     final res = await ApiClient.get(
-      '/api/resource/POS Opening Entry?filters=[["docstatus", "=", 1], ["user", "=", "$user"], ["status", "=", "Open"]]&limit=1',
+      '/api/resource/POS Opening Entry?fields=["name","pos_profile","period_start_date"]&filters=[["docstatus","=",1],["user","=","$user"],["status","=","Open"]]&limit=1',
     );
+    print('hasOpenPosEntry Response: ${res.statusCode} - ${res.body}');
 
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
-      return (data['data'] as List).isNotEmpty;
+      final sessions = data['data'] as List;
+      if (sessions.isEmpty) return false;
+      // print(sessions);
+      final name = sessions[0]['name'];
+      final postime = sessions[0]['period_start_date'];
+      final pos = sessions[0]['pos_profile'];
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pos_open', name);
+      await prefs.setString('pos_time', postime);
+      // await _fetchAndSavePosProfile(pos);
+
+      return true;
     } else {
       throw Exception('فشل في التحقق من فتح نقطة البيع');
     }
@@ -599,5 +613,58 @@ class PosService {
       print('Error fetching invoice count: $e');
       return 0;
     }
+  }
+
+  static Future<void> _fetchAndSavePosProfile(String posProfileName) async {
+    try {
+      // 1. جلب بيانات POS Profile من API
+      final response = await ApiClient.get(
+        '/api/resource/POS Profile/$posProfileName',
+      );
+
+      if (response.statusCode == 200) {
+        final posData =
+            jsonDecode(response.body)['data'] as Map<String, dynamic>;
+
+        // تحويل البيانات لتكون قابلة للتشفير
+        final encodableData = _convertToEncodable(posData);
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          'selected_pos_profile',
+          json.encode(encodableData),
+        );
+
+        debugPrint('تم حفظ بيانات POS Profile بنجاح');
+      } else {
+        throw Exception('فشل في جلب بيانات نقطة البيع');
+      }
+    } catch (e) {
+      debugPrint('Error fetching POS Profile: $e');
+      throw Exception('تعذر حفظ إعدادات نقطة البيع');
+    }
+  }
+
+  static Map<String, dynamic> _convertToEncodable(Map<String, dynamic> data) {
+    final result = <String, dynamic>{};
+
+    data.forEach((key, value) {
+      if (value is Set) {
+        result[key] = value.toList(); // تحويل Set إلى List
+      } else if (value is DateTime) {
+        result[key] = value.toIso8601String(); // تحويل التاريخ
+      } else if (value is Map || value is List) {
+        result[key] = value; // هذه الأنواع قابلة للتشفير
+      } else if (value == null ||
+          value is String ||
+          value is num ||
+          value is bool) {
+        result[key] = value; // الأنواع الأساسية
+      } else {
+        result[key] = value.toString(); // التحويل الافتراضي
+      }
+    });
+
+    return result;
   }
 }

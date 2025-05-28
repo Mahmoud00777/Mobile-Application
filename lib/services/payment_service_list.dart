@@ -35,7 +35,7 @@ class PaymentService {
 
     // استخدام الفلاتر في الاستعلام
     final res = await ApiClient.get(
-      '/api/resource/Payment Entry?fields=["name","party","paid_amount","posting_date"]&filters=$filters',
+      '/api/resource/Payment Entry?fields=["name","party","paid_amount","posting_date","mode_of_payment"]&filters=$filters',
     );
     print('GET Payment Entry ⇒ status: ${res.statusCode}, body: ${res.body}');
 

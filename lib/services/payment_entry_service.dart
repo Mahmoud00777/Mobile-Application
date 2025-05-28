@@ -91,11 +91,82 @@ class PaymentEntryService {
     );
     print('← [Service] createPayment status: ${res.statusCode}');
     print('← [Service] createPayment body: ${res.body}');
+    print('createPayment = $data');
+    final partyName = data['party_name'];
+    final visitUpdateResponse = await updateVisitStatus(
+      customerName: partyName,
+      shiftId: openShiftId!,
+      newStatus: 'ايصال قبض',
+    );
+
     if (res.statusCode != 200 && res.statusCode != 201) {
       throw Exception(
         'Failed to create payment: HTTP ${res.statusCode} - ${res.body}',
       );
     }
     print('→ [Service] createPayment succeeded');
+  }
+
+  static Future<Map<String, dynamic>> updateVisitStatus({
+    required String customerName,
+    required String shiftId,
+    required String newStatus,
+  }) async {
+    try {
+      // 1. البحث عن الزيارة المفتوحة لهذا الزبون والوردية
+      final visitResponse = await ApiClient.get(
+        '/api/resource/Visit?fields=["name"]'
+        '&filters=['
+        '["customer","=","$customerName"],'
+        '["pos_opening_shift","=","$shiftId"],'
+        '["select_state","=","لم تتم زيارة"]'
+        ']',
+      );
+
+      if (visitResponse.statusCode == 200) {
+        final visits = json.decode(visitResponse.body)['data'] as List;
+
+        if (visits.isNotEmpty) {
+          final visitName = visits.first['name'];
+
+          // 2. تحديث حالة الزيارة
+          final updateResponse =
+              await ApiClient.putJson('/api/resource/Visit/$visitName', {
+                'select_state': newStatus,
+                'data_time': DateTime.now().toIso8601String().split('T')[0],
+              });
+
+          if (updateResponse.statusCode == 200) {
+            return {
+              'success': true,
+              'message': 'تم تحديث حالة الزيارة بنجاح',
+              'visit_name': visitName,
+            };
+          } else {
+            return {
+              'success': false,
+              'error': 'فشل في تحديث الزيارة: ${updateResponse.statusCode}',
+              'details': updateResponse.body,
+            };
+          }
+        } else {
+          return {
+            'success': false,
+            'error': 'لا توجد زيارة مفتوحة لهذا الزبون والوردية',
+          };
+        }
+      } else {
+        return {
+          'success': false,
+          'error': 'فشل في البحث عن الزيارة: ${visitResponse.statusCode}',
+          'details': visitResponse.body,
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'حدث خطأ أثناء تحديث الزيارة: ${e.toString()}',
+      };
+    }
   }
 }

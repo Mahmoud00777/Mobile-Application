@@ -1,8 +1,9 @@
 import 'package:drsaf/screen/material_request_detail_page.dart';
+import 'package:drsaf/screen/materials_request.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/materials_requestM.dart';
 import '../services/materials_service.dart';
-import 'materials_request.dart';
 
 class MaterialRequestScreen extends StatefulWidget {
   const MaterialRequestScreen({super.key});
@@ -17,6 +18,12 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   final Color secondaryColor = Colors.white;
   final Color backgroundColor = const Color(0xFFF6F0F0);
   final Color pressedColor = const Color(0xFFF2E2B1);
+
+  DateTimeRange? _selectedDateRange;
+  String _searchQuery = '';
+  String? _selectedStatus;
+  final List<String> _statusOptions = ['معلق', 'موافق عليه', 'مرفوض'];
+
   @override
   void initState() {
     super.initState();
@@ -26,16 +33,18 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   void _refreshRequests() {
     setState(() {
       _requestsFuture = MaterialRequestService.getMaterialRequests();
+      _selectedDateRange = null;
+      _searchQuery = '';
+      _selectedStatus = null;
     });
   }
 
-  @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'طلبات',
+          'طلبات المواد',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
         ),
         backgroundColor: primaryColor,
@@ -97,42 +106,127 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
           }
 
           final requests = snapshot.data!;
+          final searchLower = _searchQuery.replaceAll('/', '').toLowerCase();
 
-          if (requests.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.asset('assets/images/empty_box.png', width: 120),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'لا توجد طلبات مواد حالياً',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () => _createNewRequest(context),
-                    child: const Text(
-                      'إنشاء طلب جديد',
-                      style: TextStyle(
-                        color: Color.fromARGB(255, 156, 20, 20),
-                        fontWeight: FontWeight.bold,
+          final filteredRequests =
+              requests.where((req) {
+                final matchDateRange =
+                    _selectedDateRange == null ||
+                    (DateTime.tryParse(req.transactionDate) != null &&
+                        DateTime.parse(req.transactionDate).isAfter(
+                          _selectedDateRange!.start.subtract(
+                            const Duration(days: 1),
+                          ),
+                        ) &&
+                        DateTime.parse(req.transactionDate).isBefore(
+                          _selectedDateRange!.end.add(const Duration(days: 1)),
+                        ));
+
+                String formattedTransactionDate = DateFormat('yyyyMMdd').format(
+                  DateTime.tryParse(req.transactionDate) ?? DateTime(2000),
+                );
+                String formattedScheduleDate = DateFormat(
+                  'yyyyMMdd',
+                ).format(DateTime.tryParse(req.scheduleDate) ?? DateTime(2000));
+
+                final matchSearch =
+                    _searchQuery.isEmpty ||
+                    req.name.toLowerCase().contains(searchLower) ||
+                    formattedTransactionDate.contains(searchLower) ||
+                    formattedScheduleDate.contains(searchLower) ||
+                    _matchesYearMonth(req.transactionDate, _searchQuery) ||
+                    _matchesYearMonth(req.scheduleDate, _searchQuery);
+
+                final matchStatus =
+                    _selectedStatus == null ||
+                    _selectedStatus == '' ||
+                    req.status == _selectedStatus;
+
+                return matchDateRange && matchSearch && matchStatus;
+              }).toList();
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'بحث برقم الطلب أو التاريخ (مثال: 2024/05)',
+                          prefixIcon: const Icon(Icons.search),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value.trim();
+                          });
+                        },
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
+                    DropdownButton<String>(
+                      value: _selectedStatus,
+                      hint: const Text('الحالة'),
+                      underline: const SizedBox(),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: '',
+                          child: Text('كل الحالات'),
+                        ),
+                        ..._statusOptions.map((status) {
+                          return DropdownMenuItem<String>(
+                            value: status,
+                            child: Text(status),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedStatus = value == '' ? null : value;
+                        });
+                      },
+                    ),
+                  ],
+                ),
               ),
-            );
-          }
 
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: requests.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final req = requests[index];
-              return _buildRequestCard(context, req);
-            },
+              if (filteredRequests.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      _searchQuery.isNotEmpty ||
+                              _selectedDateRange != null ||
+                              (_selectedStatus != null && _selectedStatus != '')
+                          ? 'لا توجد نتائج مطابقة'
+                          : 'لا توجد طلبات حالياً',
+                      style: const TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: filteredRequests.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final req = filteredRequests[index];
+                      return _buildRequestCard(context, req);
+                    },
+                  ),
+                ),
+            ],
           );
         },
       ),
@@ -144,99 +238,121 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
     );
   }
 
+  bool _matchesYearMonth(String dateStr, String query) {
+    try {
+      final date = DateTime.tryParse(dateStr);
+      if (date == null) return false;
+
+      final normalizedQuery = query
+          .trim()
+          .replaceAll('-', '/')
+          .replaceAll('.', '/');
+      final parts = normalizedQuery.split('/');
+      if (parts.length != 2) return false;
+
+      final part1 = int.tryParse(parts[0]);
+      final part2 = int.tryParse(parts[1]);
+      if (part1 == null || part2 == null) return false;
+
+      final isYearMonth = part1 > 1900;
+      final year = isYearMonth ? part1 : part2;
+      final month = isYearMonth ? part2 : part1;
+
+      return date.year == year && date.month == month;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Widget _buildRequestCard(BuildContext context, MaterialRequest req) {
+    Color getStatusColor(String status) {
+      switch (status) {
+        case 'معلق':
+          return Colors.orange;
+        case 'موافق عليه':
+          return Colors.green;
+        case 'مرفوض':
+          return Colors.red;
+        default:
+          return const Color.fromARGB(255, 24, 120, 255);
+      }
+    }
+
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.symmetric(vertical: 6),
+      elevation: 3,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
+        splashColor: pressedColor.withOpacity(0.3),
+        highlightColor: pressedColor.withOpacity(0.2),
         onTap: () => _navigateToDetail(context, req.name),
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+          padding: const EdgeInsets.all(12),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    req.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            req.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Chip(
+                          label: Text(
+                            req.status,
+                            style: TextStyle(
+                              color: getStatusColor(req.status),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          backgroundColor: getStatusColor(
+                            req.status,
+                          ).withOpacity(0.15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  _buildStatusChip(req.status),
-                ],
+                    const SizedBox(height: 8),
+                    if (req.reason.isNotEmpty)
+                      Text(
+                        '📦 النوع: ${req.reason}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    if (req.warehouse.isNotEmpty)
+                      Text(
+                        '🏬 المخزن: ${req.warehouse}',
+                        style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                      ),
+                    Text(
+                      '📅 تاريخ الطلب: ${req.transactionDate}',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                    ),
+                    Text(
+                      '🕒 الموعد المخطط: ${req.scheduleDate}',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              _buildInfoRow(Icons.category, 'النوع', req.reason),
-              _buildInfoRow(Icons.warehouse, 'المخزن', req.warehouse),
-              _buildInfoRow(
-                Icons.calendar_today,
-                'تاريخ الطلب',
-                req.transactionDate,
-              ),
-              _buildInfoRow(Icons.schedule, 'الموعد المخطط', req.scheduleDate),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: Colors.grey[600]),
-          const SizedBox(width: 8),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: const TextStyle(fontSize: 14, color: Colors.black87),
-                children: [
-                  TextSpan(
-                    text: '$label: ',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  TextSpan(text: value),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusChip(String status) {
-    Color chipColor;
-    switch (status.toLowerCase()) {
-      case 'pending':
-        chipColor = Colors.orange;
-        break;
-      case 'completed':
-        chipColor = Colors.green;
-        break;
-      case 'cancelled':
-        chipColor = Colors.red;
-        break;
-      default:
-        chipColor = Colors.blue;
-    }
-
-    return Chip(
-      label: Text(
-        status,
-        style: const TextStyle(color: Colors.white, fontSize: 12),
-      ),
-      backgroundColor: chipColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
     );
   }
 
