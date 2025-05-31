@@ -4,6 +4,10 @@ import 'package:drsaf/services/auth_service.dart';
 import 'package:drsaf/services/pos_service.dart';
 import 'package:flutter/material.dart';
 
+void main() {
+  runApp(const MyApp());
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -13,8 +17,14 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.light(primary: const Color(0xFFBDB395)),
+        fontFamily: 'Cairo', // خط عربي إن رغبت
       ),
-      home: const Login(),
+      locale: const Locale('ar', ''),
+      supportedLocales: const [Locale('ar', '')],
+      home: const Directionality(
+        textDirection: TextDirection.rtl,
+        child: Login(),
+      ),
     );
   }
 }
@@ -28,20 +38,15 @@ class Login extends StatefulWidget {
 
 class _LoginState extends State<Login> {
   final _formLoginKey = GlobalKey<FormState>();
-  final _urlController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _rememberMe = false;
   bool _isLoading = false;
 
   final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
   final Color backgroundColor = const Color(0xFFF6F0F0);
-  final Color pressedColor = const Color(0xFFF2E2B1);
 
   @override
   void dispose() {
-    _urlController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -86,28 +91,26 @@ class _LoginState extends State<Login> {
                     ),
                     child: SingleChildScrollView(
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TextFormField(
-                            controller: _urlController,
-                            decoration: InputDecoration(
-                              labelText: 'رابط الخادم (HTTPS)',
-                              prefixIcon: const Icon(Icons.link),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: primaryColor),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                          const Text(
+                            'تسجيل الدخول',
+                            style: TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFBDB395),
                             ),
-                            cursorColor: primaryColor,
+                            textAlign: TextAlign.right,
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
                             controller: _emailController,
                             decoration: InputDecoration(
                               labelText: 'البريد الإلكتروني',
-                              prefixIcon: const Icon(Icons.email),
+                              suffixIcon: Icon(
+                                Icons.email,
+                                color: primaryColor,
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -117,6 +120,8 @@ class _LoginState extends State<Login> {
                               ),
                             ),
                             cursorColor: primaryColor,
+                            textAlign: TextAlign.right,
+                            textDirection: TextDirection.rtl,
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
@@ -124,7 +129,7 @@ class _LoginState extends State<Login> {
                             obscureText: true,
                             decoration: InputDecoration(
                               labelText: 'كلمة المرور',
-                              prefixIcon: const Icon(Icons.lock),
+                              suffixIcon: Icon(Icons.lock, color: primaryColor),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -134,30 +139,20 @@ class _LoginState extends State<Login> {
                               ),
                             ),
                             cursorColor: primaryColor,
+                            textAlign: TextAlign.right,
+                            textDirection: TextDirection.rtl,
                           ),
                           const SizedBox(height: 20),
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Row(
-                                children: [
-                                  Checkbox(
-                                    value: _rememberMe,
-                                    onChanged: (value) {
-                                      setState(() => _rememberMe = value!);
-                                    },
-                                    activeColor: primaryColor,
-                                  ),
-                                  const Text('تذكرني'),
-                                ],
-                              ),
-                              TextButton(
-                                onPressed: () {},
-                                child: Text(
-                                  'نسيت كلمة المرور؟',
-                                  style: TextStyle(color: primaryColor),
-                                ),
-                              ),
+                              // TextButton(
+                              //   onPressed: () {},
+                              //   child: Text(
+                              //     'نسيت كلمة المرور؟',
+                              //     style: TextStyle(color: primaryColor),
+                              //   ),
+                              // ),
                             ],
                           ),
                           const SizedBox(height: 30),
@@ -183,6 +178,8 @@ class _LoginState extends State<Login> {
                                           fontSize: 18,
                                           color: Colors.white,
                                         ),
+                                        textAlign:
+                                            TextAlign.center, // النص أبيض
                                       ),
                             ),
                           ),

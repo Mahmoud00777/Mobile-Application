@@ -698,7 +698,7 @@ class _VisitScreenState extends State<VisitScreen> {
               ),
               child: Column(
                 children: [
-                  // Header مع زر الحفظ
+                  // Header مع زر الإغلاق فقط
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
@@ -711,52 +711,9 @@ class _VisitScreenState extends State<VisitScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Row(
-                          children: [
-                            if (isModified)
-                              TextButton(
-                                onPressed: () async {
-                                  final updatedVisit = visit.copyWith(
-                                    note: noteController.text,
-                                    select_state: selectedState,
-                                  );
-                                  await VisitService.updateVisit(updatedVisit);
-                                  Navigator.pop(context);
-                                  _refreshVisits();
-                                },
-                                style: TextButton.styleFrom(
-                                  backgroundColor:
-                                      Colors.green[50], // خلفية خضراء فاتحة
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: 24,
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(
-                                      10,
-                                    ), // زوايا مدورة
-                                    side: BorderSide(
-                                      color: Colors.green,
-                                    ), // حد أخضر
-                                  ),
-                                  elevation: 3, // ظل خفيف
-                                ),
-                                child: Text(
-                                  'حفظ',
-                                  style: TextStyle(
-                                    color: Color(
-                                      0xFF014203,
-                                    ), // لون نص أخضر داكن
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            IconButton(
-                              icon: Icon(Icons.close),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                          ],
+                        IconButton(
+                          icon: Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
@@ -817,11 +774,8 @@ class _VisitScreenState extends State<VisitScreen> {
                                 ? '${visit.latitude}, ${visit.longitude}'
                                 : 'غير متوفر',
                           ),
-
                           _buildReadOnlyInfo('العميل', visit.customer),
-
                           _buildReadOnlyInfo('الوردية', visit.posOpeningShift),
-
                           _buildReadOnlyInfo(
                             'التاريخ',
                             DateFormat(
@@ -833,13 +787,15 @@ class _VisitScreenState extends State<VisitScreen> {
                     ),
                   ),
 
+                  // زر التحقق من الموقع
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: ElevatedButton.icon(
                       icon: Icon(Icons.location_on),
                       label: Text('تمت زيارة - التحقق من الموقع'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        backgroundColor: const Color.fromARGB(255, 52, 117, 54),
                         minimumSize: Size(double.infinity, 50),
                       ),
                       onPressed: () async {
@@ -849,11 +805,9 @@ class _VisitScreenState extends State<VisitScreen> {
                           visit,
                           setModalState,
                           (newState) {
-                            // دالة تحديث selectedState
                             setModalState(() => selectedState = newState);
                           },
                           (modified) {
-                            // دالة تحديث isModified
                             setModalState(() => isModified = modified);
                           },
                         );
@@ -862,10 +816,38 @@ class _VisitScreenState extends State<VisitScreen> {
                     ),
                   ),
 
+                  // مؤشر تحميل عند التحقق من الموقع
                   if (isCheckingLocation)
                     Padding(
                       padding: EdgeInsets.all(8),
                       child: CircularProgressIndicator(),
+                    ),
+
+                  // زر الحفظ في الأسفل
+                  if (isModified)
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: ElevatedButton.icon(
+                        icon: Icon(Icons.save),
+                        label: Text('حفظ'),
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: Colors.white, //
+                          backgroundColor: Color(0xFFBDB395),
+                          minimumSize: Size(double.infinity, 50),
+                        ),
+                        onPressed: () async {
+                          final updatedVisit = visit.copyWith(
+                            note: noteController.text,
+                            select_state: selectedState,
+                          );
+                          await VisitService.updateVisit(updatedVisit);
+                          Navigator.pop(context);
+                          _refreshVisits();
+                        },
+                      ),
                     ),
                 ],
               ),

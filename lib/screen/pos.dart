@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:drsaf/services/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1502,6 +1503,17 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Build image URL
+    String? fullImageUrl;
+    if (product.imageUrl != null && product.imageUrl!.isNotEmpty) {
+      String imagePath = product.imageUrl!;
+      if (!imagePath.startsWith('/')) {
+        imagePath = '/$imagePath';
+      }
+      fullImageUrl = 'https://demo2.ababeel.ly$imagePath';
+      print('→ Trying to load image: $fullImageUrl');
+    }
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1511,17 +1523,54 @@ class ProductCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // تقليل ارتفاع الصورة ليكون مناسب لشبكة GridView
             Container(
               height: 170,
-              decoration: BoxDecoration(image: _buildImageDecoration()),
-              child: Padding(
-                padding: const EdgeInsets.all(6.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
+              color: Colors.grey.shade200,
+              child: Stack(
+                children: [
+                  // Background image (flipped)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
+                      child:
+                          fullImageUrl == null
+                              ? Image.asset(
+                                'assets/images/placeholder.png',
+                                fit: BoxFit.cover,
+                              )
+                              : Transform(
+                                alignment: Alignment.center,
+                                transform: Matrix4.rotationY(math.pi),
+                                child: FadeInImage.assetNetwork(
+                                  placeholder: 'assets/images/placeholder.png',
+                                  image: fullImageUrl,
+                                  fit: BoxFit.cover,
+                                  imageErrorBuilder: (
+                                    context,
+                                    error,
+                                    stackTrace,
+                                  ) {
+                                    return Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        size: 48,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                    ),
+                  ),
+
+                  // Overlay: item name + price + stock
+                  Positioned(
+                    left: 6,
+                    right: 6,
+                    bottom: 6,
+                    child: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.5),
@@ -1545,8 +1594,8 @@ class ProductCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1555,28 +1604,12 @@ class ProductCard extends StatelessWidget {
     );
   }
 
-  //------------------------------------------------------//
-
-  DecorationImage? _buildImageDecoration() {
-    if (product.imageUrl == null || product.imageUrl!.isEmpty) {
-      return null;
-    }
-    String? imageUrl = product.imageUrl;
-    String fullImageUrl = 'https://demo2.ababeel.ly$imageUrl';
-    return DecorationImage(
-      image: NetworkImage(fullImageUrl),
-      fit: BoxFit.cover,
-      colorFilter: ColorFilter.mode(
-        Colors.black.withOpacity(0.2),
-        BlendMode.darken,
-      ),
-    );
-  }
-
   Widget _buildPriceAndStock() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Price on the left
         Text(
           '${product.rate.toStringAsFixed(0)} LYD',
           style: const TextStyle(
@@ -1585,6 +1618,7 @@ class ProductCard extends StatelessWidget {
             fontWeight: FontWeight.bold,
           ),
         ),
+        // Quantity on the right
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
@@ -1592,7 +1626,7 @@ class ProductCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
-            'المتاح: ${product.qty.toStringAsFixed(0)}',
+            product.qty.toStringAsFixed(0),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 8,

@@ -20,9 +20,18 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   final Color pressedColor = const Color(0xFFF2E2B1);
 
   DateTimeRange? _selectedDateRange;
+  DateTime _fromDate = DateTime.now().subtract(const Duration(days: 30));
+  DateTime _toDate = DateTime.now();
+  final DateFormat _df = DateFormat('yyyy-MM-dd');
+
   String _searchQuery = '';
   String? _selectedStatus;
-  final List<String> _statusOptions = ['معلق', 'موافق عليه', 'مرفوض'];
+  final List<String> _statusOptions = [
+    'Draft',
+    'Transferred',
+    'Pending',
+    'Cancelled',
+  ];
 
   @override
   void initState() {
@@ -37,6 +46,37 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
       _searchQuery = '';
       _selectedStatus = null;
     });
+  }
+
+  void _pickDateRange() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(start: _fromDate, end: _toDate),
+      locale: const Locale('ar'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _fromDate = picked.start;
+        _toDate = picked.end;
+        _selectedDateRange = picked;
+      });
+    }
   }
 
   @override
@@ -129,9 +169,12 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
                   'yyyyMMdd',
                 ).format(DateTime.tryParse(req.scheduleDate) ?? DateTime(2000));
 
+                final nameNormalized =
+                    req.name.replaceAll('/', '').toLowerCase();
+
                 final matchSearch =
                     _searchQuery.isEmpty ||
-                    req.name.toLowerCase().contains(searchLower) ||
+                    nameNormalized.contains(searchLower) ||
                     formattedTransactionDate.contains(searchLower) ||
                     formattedScheduleDate.contains(searchLower) ||
                     _matchesYearMonth(req.transactionDate, _searchQuery) ||
@@ -158,7 +201,7 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
                       flex: 2,
                       child: TextField(
                         decoration: InputDecoration(
-                          hintText: 'بحث برقم الطلب أو التاريخ (مثال: 2024/05)',
+                          hintText: 'بحث برقم الطلب)',
                           prefixIcon: const Icon(Icons.search),
                           filled: true,
                           fillColor: Colors.white,
@@ -173,34 +216,23 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    const SizedBox(width: 4),
-                    DropdownButton<String>(
-                      value: _selectedStatus,
-                      hint: const Text('الحالة'),
-                      underline: const SizedBox(),
-                      items: [
-                        const DropdownMenuItem<String>(
-                          value: '',
-                          child: Text('كل الحالات'),
-                        ),
-                        ..._statusOptions.map((status) {
-                          return DropdownMenuItem<String>(
-                            value: status,
-                            child: Text(status),
-                          );
-                        }),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedStatus = value == '' ? null : value;
-                        });
-                      },
-                    ),
                   ],
                 ),
               ),
-
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _pickDateRange,
+                    icon: Icon(Icons.date_range, color: primaryColor),
+                    label: Text(
+                      '${_df.format(_fromDate)} → ${_df.format(_toDate)}',
+                      style: TextStyle(color: primaryColor),
+                    ),
+                  ),
+                ),
+              ),
               if (filteredRequests.isEmpty)
                 Expanded(
                   child: Center(
@@ -230,11 +262,84 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _createNewRequest(context),
-        backgroundColor: primaryColor,
-        child: const Icon(Icons.add, size: 28, color: Colors.white),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(right: 16.0, bottom: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            FloatingActionButton(
+              heroTag: 'filter',
+              onPressed: _showFilterBottomSheet,
+              backgroundColor: primaryColor,
+              child: const Icon(
+                Icons.filter_list,
+                size: 28,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FloatingActionButton(
+              heroTag: 'add',
+              onPressed: () => _createNewRequest(context),
+              backgroundColor: primaryColor,
+              child: const Icon(Icons.add, size: 28, color: Colors.white),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _showFilterBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'فلترة حسب حالة الطلب',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                title: const Text('كل الحالات'),
+                leading: Radio<String?>(
+                  value: null,
+                  groupValue: _selectedStatus,
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedStatus = value;
+                    });
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+              ..._statusOptions.map((status) {
+                return ListTile(
+                  title: Text(status),
+                  leading: Radio<String?>(
+                    value: status,
+                    groupValue: _selectedStatus,
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedStatus = value;
+                      });
+                      Navigator.pop(context);
+                    },
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -267,14 +372,16 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   Widget _buildRequestCard(BuildContext context, MaterialRequest req) {
     Color getStatusColor(String status) {
       switch (status) {
-        case 'معلق':
+        case 'Draft':
           return Colors.orange;
-        case 'موافق عليه':
+        case 'Transferred':
           return Colors.green;
-        case 'مرفوض':
+        case 'Cancelled':
           return Colors.red;
+        case 'Pending':
+          return const Color.fromARGB(255, 32, 85, 202);
         default:
-          return const Color.fromARGB(255, 24, 120, 255);
+          return const Color.fromARGB(255, 105, 105, 106);
       }
     }
 

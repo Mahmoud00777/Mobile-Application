@@ -34,6 +34,8 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
   bool _isLoading = true;
   String? _selectedMethod;
   String? _errorMessage;
+  final Color primaryColor = const Color(0xFFBDB395);
+  final Color secondaryColor = Colors.white;
 
   @override
   void initState() {
@@ -271,7 +273,7 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Create Payment')),
+      appBar: AppBar(title: Text('إنشاء دفعة'), backgroundColor: primaryColor),
       body: Padding(
         padding: EdgeInsets.all(16),
         child: Column(
@@ -281,20 +283,31 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
             TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                labelText: 'Search Customer',
-                suffixIcon: Icon(Icons.search),
+                labelText: 'ابحث عن عميل',
+                labelStyle: TextStyle(color: primaryColor),
+                suffixIcon: Icon(Icons.search, color: primaryColor),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: primaryColor),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: primaryColor.withOpacity(0.5)),
+                ),
               ),
+              cursorColor: primaryColor,
               onTap: () {
                 if (!_showList) _loadCustomers();
               },
             ),
-            SizedBox(height: 16),
-            // Customer list or selected details
             if (_showList)
               Expanded(
                 child:
                     _filteredCustomers.isEmpty
-                        ? Center(child: Text('No customers found'))
+                        ? Center(
+                          child: Text(
+                            'لا يوجد عملاء',
+                            style: TextStyle(color: primaryColor),
+                          ),
+                        )
                         : ListView.builder(
                           itemCount: _filteredCustomers.length,
                           itemBuilder: (context, index) {
@@ -302,17 +315,24 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
                             return ListTile(
                               title: Text(
                                 customer.customerName ?? customer.name ?? '',
+                                style: TextStyle(color: primaryColor),
                               ),
                               onTap: () => _onCustomerSelected(customer),
+                              trailing: Icon(Icons.person, color: primaryColor),
                             );
                           },
                         ),
               )
             else if (_selectedCustomer != null) ...[
               Text(
-                'Selected Customer:',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                'العميل المختار:',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: primaryColor,
+                  fontSize: 16,
+                ),
               ),
+
               SizedBox(height: 8),
               Text(_selectedCustomer!.customerName),
               SizedBox(height: 16),
@@ -322,9 +342,14 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Outstanding Balance:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      'الرصيد المستحق:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: primaryColor,
+                        fontSize: 16,
+                      ),
                     ),
+
                     SizedBox(height: 8),
                     Text(_selectedBalance!.outstanding.toStringAsFixed(2)),
                     SizedBox(height: 16),
@@ -353,6 +378,7 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
                                             : Colors.black,
                                   ),
                                 ),
+
                                 const Icon(Icons.arrow_drop_down),
                               ],
                             ),
@@ -364,18 +390,36 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
                       controller: _paidAmountCtrl,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
-                        labelText: 'Paid Amount',
-                        border: OutlineInputBorder(),
+                        labelText: 'المبلغ المدفوع',
+                        labelStyle: TextStyle(color: primaryColor),
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(color: primaryColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: primaryColor, width: 2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
+                      cursorColor: primaryColor,
                     ),
+
                     SizedBox(height: 24),
                     // Submit button
                     ElevatedButton(
                       onPressed: _submit,
                       style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
                         minimumSize: Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
-                      child: Text('Submit'),
+
+                      child: Text(
+                        'إرسال',
+                        style: TextStyle(fontSize: 18, color: secondaryColor),
+                      ),
                     ),
                   ],
                 )

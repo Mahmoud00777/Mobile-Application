@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 class PosService {
   static Future<bool> hasOpenPosEntry() async {
     final user = await AuthService.getCurrentUser();
-    // if (user == null) throw Exception('المستخدم غير معروف أو غير مسجل الدخول');
     print(user);
     final res = await ApiClient.get(
       '/api/resource/POS Opening Entry?fields=["name","pos_profile","period_start_date"]&filters=[["docstatus","=",1],["user","=","$user"],["status","=","Open"]]&limit=1',
@@ -27,7 +26,7 @@ class PosService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('pos_open', name);
       await prefs.setString('pos_time', postime);
-      // await _fetchAndSavePosProfile(pos);
+      await _fetchAndSavePosProfile(pos);
 
       return true;
     } else {
