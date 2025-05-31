@@ -572,8 +572,9 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Visit?filters=['
         '["pos_profile","=","$posOpeningName"],'
-        '["creation","like","$todayStr%"]'
-        ']&fields=["name"]',
+        '["creation","like","$todayStr%"],'
+        '["select_state","!=","لم تتم زيارة"]'
+        ']&fields=["name","status"]',
       );
       print('getVisitCount: ${response.statusCode} - ${response.body}');
 
@@ -622,7 +623,9 @@ class PosService {
     try {
       final response = await ApiClient.get(
         '/api/resource/Material Request?filters=['
-        '["custom_pos_profile","=","$posOpeningName"]]&fields=["name"]',
+        '["custom_pos_profile","=","$posOpeningName"],'
+        '["status","=","Pending"]]'
+        '&fields=["name"]',
       );
       print('getOrderCount: ${response.statusCode} - ${response.body}');
 

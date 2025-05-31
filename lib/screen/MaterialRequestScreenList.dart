@@ -14,16 +14,20 @@ class MaterialRequestScreen extends StatefulWidget {
 
 class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   late Future<List<MaterialRequest>> _requestsFuture;
+
+  // Theme colors
   final Color primaryColor = const Color(0xFFBDB395);
   final Color secondaryColor = Colors.white;
   final Color backgroundColor = const Color(0xFFF6F0F0);
   final Color pressedColor = const Color(0xFFF2E2B1);
 
+  // Date range filter
   DateTimeRange? _selectedDateRange;
   DateTime _fromDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _toDate = DateTime.now();
   final DateFormat _df = DateFormat('yyyy-MM-dd');
 
+  // Search & status filter
   String _searchQuery = '';
   String? _selectedStatus;
   final List<String> _statusOptions = [
@@ -45,24 +49,31 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
       _selectedDateRange = null;
       _searchQuery = '';
       _selectedStatus = null;
+      _fromDate = DateTime.now().subtract(const Duration(days: 30));
+      _toDate = DateTime.now();
     });
   }
 
-  void _pickDateRange() async {
+  Future<void> _pickDateRange() async {
+    // Show the date range picker with default English locale and themed colors
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      lastDate: DateTime.now(),
       initialDateRange: DateTimeRange(start: _fromDate, end: _toDate),
-      locale: const Locale('ar'),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: ColorScheme.light(
-              primary: primaryColor,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
+              primary: primaryColor, // Header background
+              onPrimary: Colors.white, // Header text/icons
+              surface: Colors.white, // Picker background
+              onSurface: Colors.black, // Picker text
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: primaryColor, // Button text color
+              ),
             ),
           ),
           child: child!,
@@ -79,218 +90,6 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'طلبات المواد',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
-        ),
-        backgroundColor: primaryColor,
-        centerTitle: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.only(
-            bottomRight: Radius.circular(25),
-            bottomLeft: Radius.circular(25),
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshRequests,
-          ),
-        ],
-      ),
-      body: FutureBuilder<List<MaterialRequest>>(
-        future: _requestsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  Color.fromARGB(255, 156, 20, 20),
-                ),
-              ),
-            );
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                  const SizedBox(height: 16),
-                  Text(
-                    'حدث خطأ في جلب البيانات',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    snapshot.error.toString(),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color.fromARGB(255, 156, 20, 20),
-                    ),
-                    onPressed: _refreshRequests,
-                    child: const Text('إعادة المحاولة'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final requests = snapshot.data!;
-          final searchLower = _searchQuery.replaceAll('/', '').toLowerCase();
-
-          final filteredRequests =
-              requests.where((req) {
-                final matchDateRange =
-                    _selectedDateRange == null ||
-                    (DateTime.tryParse(req.transactionDate) != null &&
-                        DateTime.parse(req.transactionDate).isAfter(
-                          _selectedDateRange!.start.subtract(
-                            const Duration(days: 1),
-                          ),
-                        ) &&
-                        DateTime.parse(req.transactionDate).isBefore(
-                          _selectedDateRange!.end.add(const Duration(days: 1)),
-                        ));
-
-                String formattedTransactionDate = DateFormat('yyyyMMdd').format(
-                  DateTime.tryParse(req.transactionDate) ?? DateTime(2000),
-                );
-                String formattedScheduleDate = DateFormat(
-                  'yyyyMMdd',
-                ).format(DateTime.tryParse(req.scheduleDate) ?? DateTime(2000));
-
-                final nameNormalized =
-                    req.name.replaceAll('/', '').toLowerCase();
-
-                final matchSearch =
-                    _searchQuery.isEmpty ||
-                    nameNormalized.contains(searchLower) ||
-                    formattedTransactionDate.contains(searchLower) ||
-                    formattedScheduleDate.contains(searchLower) ||
-                    _matchesYearMonth(req.transactionDate, _searchQuery) ||
-                    _matchesYearMonth(req.scheduleDate, _searchQuery);
-
-                final matchStatus =
-                    _selectedStatus == null ||
-                    _selectedStatus == '' ||
-                    req.status == _selectedStatus;
-
-                return matchDateRange && matchSearch && matchStatus;
-              }).toList();
-
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'بحث برقم الطلب)',
-                          prefixIcon: const Icon(Icons.search),
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value.trim();
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: _pickDateRange,
-                    icon: Icon(Icons.date_range, color: primaryColor),
-                    label: Text(
-                      '${_df.format(_fromDate)} → ${_df.format(_toDate)}',
-                      style: TextStyle(color: primaryColor),
-                    ),
-                  ),
-                ),
-              ),
-              if (filteredRequests.isEmpty)
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      _searchQuery.isNotEmpty ||
-                              _selectedDateRange != null ||
-                              (_selectedStatus != null && _selectedStatus != '')
-                          ? 'لا توجد نتائج مطابقة'
-                          : 'لا توجد طلبات حالياً',
-                      style: const TextStyle(fontSize: 18, color: Colors.grey),
-                    ),
-                  ),
-                )
-              else
-                Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filteredRequests.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final req = filteredRequests[index];
-                      return _buildRequestCard(context, req);
-                    },
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(right: 16.0, bottom: 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            FloatingActionButton(
-              heroTag: 'filter',
-              onPressed: _showFilterBottomSheet,
-              backgroundColor: primaryColor,
-              child: const Icon(
-                Icons.filter_list,
-                size: 28,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 12),
-            FloatingActionButton(
-              heroTag: 'add',
-              onPressed: () => _createNewRequest(context),
-              backgroundColor: primaryColor,
-              child: const Icon(Icons.add, size: 28, color: Colors.white),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showFilterBottomSheet() {
     showModalBottomSheet(
       context: context,
@@ -304,12 +103,12 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'فلترة حسب حالة الطلب',
+                'Filter by Status',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               ListTile(
-                title: const Text('كل الحالات'),
+                title: const Text('All Statuses'),
                 leading: Radio<String?>(
                   value: null,
                   groupValue: _selectedStatus,
@@ -335,7 +134,7 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
                     },
                   ),
                 );
-              }),
+              }).toList(),
             ],
           ),
         );
@@ -437,20 +236,20 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
                     const SizedBox(height: 8),
                     if (req.reason.isNotEmpty)
                       Text(
-                        '📦 النوع: ${req.reason}',
+                        'Type: ${req.reason}',
                         style: const TextStyle(fontSize: 14),
                       ),
                     if (req.warehouse.isNotEmpty)
                       Text(
-                        '🏬 المخزن: ${req.warehouse}',
+                        'Warehouse: ${req.warehouse}',
                         style: TextStyle(fontSize: 13, color: Colors.grey[700]),
                       ),
                     Text(
-                      '📅 تاريخ الطلب: ${req.transactionDate}',
+                      'Request Date: ${req.transactionDate}',
                       style: TextStyle(fontSize: 13, color: Colors.grey[700]),
                     ),
                     Text(
-                      '🕒 الموعد المخطط: ${req.scheduleDate}',
+                      'Scheduled Date: ${req.scheduleDate}',
                       style: TextStyle(fontSize: 13, color: Colors.grey[700]),
                     ),
                   ],
@@ -478,6 +277,227 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => MaterialRequestDetailPage(requestName: requestName),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      appBar: AppBar(
+        title: const Text(
+          'Material Requests',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+        ),
+        backgroundColor: primaryColor,
+        centerTitle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(
+            bottomRight: Radius.circular(25),
+            bottomLeft: Radius.circular(25),
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshRequests,
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<MaterialRequest>>(
+        future: _requestsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Color.fromARGB(255, 156, 20, 20),
+                ),
+              ),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error fetching data',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    snapshot.error.toString(),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color.fromARGB(255, 156, 20, 20),
+                    ),
+                    onPressed: _refreshRequests,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final requests = snapshot.data!;
+          final searchLower = _searchQuery.replaceAll('/', '').toLowerCase();
+
+          final filteredRequests =
+              requests.where((req) {
+                // Date range match
+                final matchDateRange =
+                    _selectedDateRange == null ||
+                    (DateTime.tryParse(req.transactionDate) != null &&
+                        DateTime.parse(req.transactionDate).isAfter(
+                          _selectedDateRange!.start.subtract(
+                            const Duration(days: 1),
+                          ),
+                        ) &&
+                        DateTime.parse(req.transactionDate).isBefore(
+                          _selectedDateRange!.end.add(const Duration(days: 1)),
+                        ));
+
+                // Normalize dates for year/month query
+                String formattedTransactionDate = DateFormat('yyyyMMdd').format(
+                  DateTime.tryParse(req.transactionDate) ?? DateTime(2000),
+                );
+                String formattedScheduleDate = DateFormat(
+                  'yyyyMMdd',
+                ).format(DateTime.tryParse(req.scheduleDate) ?? DateTime(2000));
+
+                final nameNormalized =
+                    req.name.replaceAll('/', '').toLowerCase();
+
+                final matchSearch =
+                    _searchQuery.isEmpty ||
+                    nameNormalized.contains(searchLower) ||
+                    formattedTransactionDate.contains(searchLower) ||
+                    formattedScheduleDate.contains(searchLower) ||
+                    _matchesYearMonth(req.transactionDate, _searchQuery) ||
+                    _matchesYearMonth(req.scheduleDate, _searchQuery);
+
+                final matchStatus =
+                    _selectedStatus == null ||
+                    _selectedStatus == '' ||
+                    req.status == _selectedStatus;
+
+                return matchDateRange && matchSearch && matchStatus;
+              }).toList();
+
+          return Column(
+            children: [
+              // Search bar
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Search by request ID',
+                          prefixIcon: const Icon(Icons.search),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value.trim();
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Date range picker button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Align(
+                  alignment: Alignment.center,
+                  child: TextButton.icon(
+                    onPressed: _pickDateRange,
+                    icon: Icon(Icons.date_range, color: primaryColor),
+                    label: Text(
+                      '${_df.format(_fromDate)} → ${_df.format(_toDate)}',
+                      style: TextStyle(color: primaryColor),
+                    ),
+                  ),
+                ),
+              ),
+
+              if (filteredRequests.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      _searchQuery.isNotEmpty ||
+                              _selectedDateRange != null ||
+                              (_selectedStatus != null && _selectedStatus != '')
+                          ? 'No matching results'
+                          : 'No requests available',
+                      style: const TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: filteredRequests.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final req = filteredRequests[index];
+                      return _buildRequestCard(context, req);
+                    },
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+
+      // Floating action buttons: filter + add
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(right: 16.0, bottom: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            FloatingActionButton(
+              heroTag: 'filter',
+              onPressed: _showFilterBottomSheet,
+              backgroundColor: primaryColor,
+              child: const Icon(
+                Icons.filter_list,
+                size: 28,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FloatingActionButton(
+              heroTag: 'add',
+              onPressed: () => _createNewRequest(context),
+              backgroundColor: primaryColor,
+              child: const Icon(Icons.add, size: 28, color: Colors.white),
+            ),
+          ],
+        ),
       ),
     );
   }

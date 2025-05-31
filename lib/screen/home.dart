@@ -1,4 +1,5 @@
 import 'package:drsaf/screen/MaterialRequestScreenList.dart';
+import 'package:drsaf/screen/appbar.dart';
 import 'package:drsaf/screen/login.dart';
 import 'package:drsaf/screen/payment_entry_list_page.dart';
 import 'package:drsaf/screen/pos.dart';
@@ -30,7 +31,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
   final Color secondaryColor = Colors.white;
   final Color backgroundColor = const Color(0xFFF6F0F0);
   final Color pressedColor = const Color(0xFFF2E2B1);
-
+  bool _isClosingShift = false;
   final List<Map<String, dynamic>> buttons = [
     {'label': 'POS', 'icon': Icons.point_of_sale},
     {'label': 'MATERIAL REQUESTS', 'icon': Icons.inventory_2},
@@ -588,6 +589,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundColor,
+      drawer: AppDrawer(onLogout: _logout),
       appBar: AppBar(
         title: const Text(
           'الصفحة الرئيسية',
@@ -595,10 +597,10 @@ class _HomePageState extends State<HomePage> with RouteAware {
         ),
         centerTitle: true,
         backgroundColor: primaryColor,
-        leading: IconButton(
-          icon: const Icon(Icons.logout, color: Colors.white),
-          onPressed: _logout,
-        ),
+        // leading: IconButton(
+        //   icon: const Icon(Icons.logout, color: Colors.white),
+        //   onPressed: _logout,
+        // ),
         actions: [
           if (selectedPOSProfile != null)
             if (selectedPOSProfile != null)
@@ -609,9 +611,21 @@ class _HomePageState extends State<HomePage> with RouteAware {
           IconButton(
             icon: CircleAvatar(
               backgroundColor: secondaryColor,
-              child: Icon(Icons.lock_clock, color: primaryColor),
+              child:
+                  _isClosingShift
+                      ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            primaryColor,
+                          ),
+                          strokeWidth: 2,
+                        ),
+                      )
+                      : Icon(Icons.lock_clock, color: primaryColor),
             ),
-            onPressed: _closePOSShift,
+            onPressed: _isClosingShift ? null : _closePOSShift,
           ),
         ],
         shape: const RoundedRectangleBorder(
