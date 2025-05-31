@@ -100,7 +100,7 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
       setState(() {
         _paymentMethods = methods;
         if (methods.isNotEmpty) {
-          _selectedMethod = methods.first['mode_of_payment']?.toString();
+          // _selectedMethod = methods.first['mode_of_payment']?.toString();
         }
       });
     } catch (e) {

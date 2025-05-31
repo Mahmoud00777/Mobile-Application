@@ -180,6 +180,7 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
                 context,
                 MaterialPageRoute(builder: (_) => CreatePaymentPage()),
               );
+              _loadPayments();
             },
             backgroundColor: primaryColor,
             foregroundColor: secondaryColor,

@@ -4,9 +4,16 @@ import '../models/sales_invoice_summary.dart';
 import '../services/sales_invoice_service.dart';
 
 class SalesInvoiceSummaryPage extends StatefulWidget {
-  const SalesInvoiceSummaryPage({super.key});
+  final int invoiceType;
+  final int filter;
+  const SalesInvoiceSummaryPage({
+    super.key,
+    required this.invoiceType,
+    required this.filter,
+  });
 
   @override
+  // ignore: library_private_types_in_public_api
   _SalesInvoiceSummaryPageState createState() =>
       _SalesInvoiceSummaryPageState();
 }
@@ -14,10 +21,13 @@ class SalesInvoiceSummaryPage extends StatefulWidget {
 class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   final DateFormat _df = DateFormat('yyyy-MM-dd');
   final TextEditingController _customerController = TextEditingController();
+  final Color primaryColor = const Color(0xFFBDB395);
+  final Color secondaryColor = Colors.white;
 
   DateTime _fromDate = DateTime.now().subtract(Duration(days: 30));
   DateTime _toDate = DateTime.now();
-  int? _isReturnFilter; // null = all, 1 = returns only, 0 = non-returns
+  int? _isReturnFilter;
+  int _quickFilter = 3;
 
   final List<SalesInvoiceSummary> _invoices = [];
   bool _isLoading = false;
@@ -28,10 +38,17 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   @override
   void initState() {
     super.initState();
-    _fetchPage(reset: true);
+    // تعيين الفلتر الأولي بناءً على invoiceType
+    _isReturnFilter = widget.invoiceType == 1 ? 1 : 0;
+    _quickFilter = widget.filter;
+
+    _applyQuickFilter(widget.filter);
   }
 
   Future<void> _fetchPage({bool reset = false}) async {
+    if (widget.invoiceType == 1) _isReturnFilter == true;
+    if (widget.invoiceType == 0) _isReturnFilter == false;
+
     if (_isLoading) return;
     setState(() => _isLoading = true);
 
@@ -41,7 +58,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
         fromDate: _df.format(_fromDate),
         toDate: _df.format(_toDate),
         customer: _customerController.text.trim(),
-        isReturn: _isReturnFilter,
+        isReturn: widget.invoiceType == 1 ? 1 : 0,
         limitStart: reset ? 0 : _page * _pageSize,
         limitPageLength: _pageSize,
       );
@@ -65,6 +82,40 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
     }
   }
 
+  void _applyQuickFilter(int index) {
+    setState(() {
+      _quickFilter = index;
+      final now = DateTime.now();
+      switch (index) {
+        case 0:
+          _fromDate = DateTime(now.year, now.month, now.day);
+          _toDate = now;
+          break;
+        case 1:
+          final yesterday = now.subtract(Duration(days: 1));
+          _fromDate = DateTime(yesterday.year, yesterday.month, yesterday.day);
+          _toDate = DateTime(
+            yesterday.year,
+            yesterday.month,
+            yesterday.day,
+            23,
+            59,
+            59,
+          );
+          break;
+        case 2:
+          _fromDate = now.subtract(Duration(days: 7));
+          _toDate = now;
+          break;
+        case 3:
+          _fromDate = DateTime(2020);
+          _toDate = now;
+          break;
+      }
+    });
+    _fetchPage(reset: true);
+  }
+
   Future<void> _pickDateRange() async {
     final picked = await showDateRangePicker(
       context: context,
@@ -84,122 +135,216 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sales Invoice Summary')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Customer search
-            TextField(
-              controller: _customerController,
-              decoration: InputDecoration(
-                labelText: 'Search Customer',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onSubmitted: (_) => _fetchPage(reset: true),
-            ),
-            const SizedBox(height: 12),
-
-            // Date range picker
-            TextButton.icon(
-              onPressed: _pickDateRange,
-              icon: const Icon(Icons.date_range),
-              label: Text('${_df.format(_fromDate)} → ${_df.format(_toDate)}'),
-            ),
-            const SizedBox(height: 12),
-
-            // Return filter toggle
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+      appBar: AppBar(
+        title: const Text('Sales Invoice Summary'),
+        backgroundColor: primaryColor,
+        foregroundColor: secondaryColor,
+      ),
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
               children: [
-                ChoiceChip(
-                  label: const Text('All'),
-                  selected: _isReturnFilter == null,
-                  onSelected: (_) {
-                    setState(() => _isReturnFilter = null);
-                    _fetchPage(reset: true);
-                  },
+                TextField(
+                  controller: _customerController,
+                  decoration: InputDecoration(
+                    labelText: 'Search Customer',
+                    prefixIcon: Icon(Icons.search, color: primaryColor),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: primaryColor, width: 2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onSubmitted: (_) => _fetchPage(reset: true),
                 ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Invoices'),
-                  selected: _isReturnFilter == 0,
-                  onSelected: (_) {
-                    setState(() => _isReturnFilter = 0);
-                    _fetchPage(reset: true);
-                  },
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: _pickDateRange,
+                  icon: Icon(Icons.date_range, color: primaryColor),
+                  label: Text(
+                    '${_df.format(_fromDate)} → ${_df.format(_toDate)}',
+                    style: TextStyle(color: primaryColor),
+                  ),
                 ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Returns'),
-                  selected: _isReturnFilter == 1,
-                  onSelected: (_) {
-                    setState(() => _isReturnFilter = 1);
-                    _fetchPage(reset: true);
-                  },
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('اليوم'),
+                      selected: _quickFilter == 0,
+                      selectedColor: primaryColor,
+                      onSelected: (_) => _applyQuickFilter(0),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('أمس'),
+                      selected: _quickFilter == 1,
+                      selectedColor: primaryColor,
+                      onSelected: (_) => _applyQuickFilter(1),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('أسبوع'),
+                      selected: _quickFilter == 2,
+                      selectedColor: primaryColor,
+                      onSelected: (_) => _applyQuickFilter(2),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('الكل'),
+                      selected: _quickFilter == 3,
+                      selectedColor: primaryColor,
+                      onSelected: (_) => _applyQuickFilter(3),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: _invoices.length + (_hasMore ? 1 : 0),
+                    itemBuilder: (ctx, i) {
+                      if (i < _invoices.length) {
+                        final inv = _invoices[i];
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 2,
+                          color: secondaryColor,
+                          child: ListTile(
+                            title: Text(
+                              inv.customer,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: primaryColor,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${_df.format(inv.postingDate)} • ${inv.invoiceNumber}',
+                              style: const TextStyle(color: Colors.black54),
+                            ),
+                            trailing: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '${inv.grandTotal.toStringAsFixed(2)} LYD',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                Text(
+                                  inv.customPosOpenShift,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      } else {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Center(
+                            child:
+                                _isLoading
+                                    ? const CircularProgressIndicator()
+                                    : ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: primaryColor,
+                                        foregroundColor: secondaryColor,
+                                      ),
+                                      onPressed: () => _fetchPage(),
+                                      child: const Text('Load More'),
+                                    ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-
-            // Invoice list
-            Expanded(
-              child: ListView.builder(
-                itemCount: _invoices.length + (_hasMore ? 1 : 0),
-                itemBuilder: (ctx, i) {
-                  if (i < _invoices.length) {
-                    final inv = _invoices[i];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+          ),
+          Positioned(
+            bottom: 30,
+            right: 30,
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: primaryColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.filter_list, color: Colors.white),
+                onPressed: () async {
+                  final selected = await showModalBottomSheet<int?>(
+                    context: context,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
                       ),
-                      elevation: 2,
-                      child: ListTile(
-                        title: Text(
-                          inv.invoiceNumber,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    builder: (context) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 20,
+                          horizontal: 24,
                         ),
-                        subtitle: Text(
-                          '${_df.format(inv.postingDate)} • ${inv.customer}',
-                        ),
-                        trailing: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              '${inv.grandTotal.toStringAsFixed(2)} LYD',
-                              style: const TextStyle(fontSize: 16),
+                              'تصفية حسب النوع',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: primaryColor,
+                              ),
                             ),
-                            Text(
-                              inv.customPosOpenShift,
-                              style: const TextStyle(fontSize: 12),
+                            const SizedBox(height: 16),
+                            ListTile(
+                              leading: Icon(
+                                Icons.all_inclusive,
+                                color: primaryColor,
+                              ),
+                              title: const Text('الكل'),
+                              onTap: () => Navigator.pop(context, null),
+                            ),
+                            ListTile(
+                              leading: Icon(
+                                Icons.receipt_long,
+                                color: primaryColor,
+                              ),
+                              title: const Text('Invoices'),
+                              onTap: () => Navigator.pop(context, 0),
+                            ),
+                            ListTile(
+                              leading: Icon(Icons.undo, color: primaryColor),
+                              title: const Text('Returns'),
+                              onTap: () => Navigator.pop(context, 1),
                             ),
                           ],
                         ),
-                      ),
-                    );
-                  } else {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Center(
-                        child:
-                            _isLoading
-                                ? const CircularProgressIndicator()
-                                : ElevatedButton(
-                                  onPressed: () => _fetchPage(),
-                                  child: const Text('Load More'),
-                                ),
-                      ),
-                    );
+                      );
+                    },
+                  );
+
+                  if (selected != null || _isReturnFilter != selected) {
+                    setState(() => _isReturnFilter = selected);
+                    _fetchPage(reset: true);
                   }
                 },
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

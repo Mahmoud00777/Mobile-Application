@@ -67,7 +67,7 @@ class _POSScreenState extends State<POSScreen> {
         products = results[0] as List<Item>;
         filteredProducts = products;
         customers = results[1] as List<Customer>;
-        selectedCustomer = results[2] as Customer?;
+        // selectedCustomer = results[2] as Customer?;
         isLoading = false;
         isFirstLoad = false;
       });
@@ -161,7 +161,6 @@ class _POSScreenState extends State<POSScreen> {
 
   void addToCart(Item product) {
     setState(() {
-      // البحث باستخدام item_name بدلاً من name
       final existingIndex = cartItems.indexWhere(
         (item) => item['item_name'] == product.itemName,
       );
@@ -1285,7 +1284,6 @@ class _POSScreenState extends State<POSScreen> {
         return StatefulBuilder(
           builder: (context, setState) {
             return Directionality(
-              // نلف المحتوى بالـ Directionality مع RTL
               textDirection: TextDirection.rtl,
               child: AlertDialog(
                 backgroundColor: backgroundColor,
@@ -1295,7 +1293,6 @@ class _POSScreenState extends State<POSScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // حقل البحث مع TextDirection.rtl
                       TextField(
                         controller: searchController,
                         textDirection: TextDirection.rtl,
@@ -1338,7 +1335,6 @@ class _POSScreenState extends State<POSScreen> {
                         },
                       ),
                       SizedBox(height: 12),
-                      // قائمة العملاء بحجم ثابت مع Scroll داخلي وخلفية بيضاء
                       SizedBox(
                         height: 300,
                         child: Container(
@@ -1362,9 +1358,7 @@ class _POSScreenState extends State<POSScreen> {
                                 title: Text(
                                   customer.customerName,
                                   style: TextStyle(color: Colors.black),
-                                  textDirection:
-                                      TextDirection
-                                          .rtl, // عنوان العميل من اليمين لليسار
+                                  textDirection: TextDirection.rtl,
                                 ),
                                 subtitle:
                                     customer.name == 'CASH'
@@ -1519,7 +1513,7 @@ class ProductCard extends StatelessWidget {
           children: [
             // تقليل ارتفاع الصورة ليكون مناسب لشبكة GridView
             Container(
-              height: 190,
+              height: 170,
               decoration: BoxDecoration(image: _buildImageDecoration()),
               child: Padding(
                 padding: const EdgeInsets.all(6.0),

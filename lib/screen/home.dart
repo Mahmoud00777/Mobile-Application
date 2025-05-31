@@ -4,8 +4,10 @@ import 'package:drsaf/screen/payment_entry_list_page.dart';
 import 'package:drsaf/screen/pos.dart';
 import 'package:drsaf/screen/pos_return.dart';
 import 'package:drsaf/screen/reports.dart';
+import 'package:drsaf/screen/sales_invoice_summary_page.dart';
 import 'package:drsaf/screen/store_screen.dart';
 import 'package:drsaf/screen/visit.dart';
+import 'package:drsaf/screen/visit_report.dart';
 import 'package:drsaf/services/auth_service.dart';
 import 'package:drsaf/services/pos_service.dart';
 import 'package:flutter/material.dart';
@@ -95,10 +97,10 @@ class _HomePageState extends State<HomePage> with RouteAware {
         );
         final results = await Future.wait([
           PosService.getVisitCount(posOpeningName),
-          PosService.getInvoiceCount(posOpeningName),
+          PosService.getInvoiceCount(posOpeningName, posOpeningShift!),
           PosService.getOrderCount(posOpeningName),
           PosService.getItemCount(),
-          PosService.getReturnInvoiceCount(posOpeningName),
+          PosService.getReturnInvoiceCount(posOpeningName, posOpeningShift),
         ]);
 
         if (mounted) {
@@ -213,6 +215,22 @@ class _HomePageState extends State<HomePage> with RouteAware {
   }
 
   Widget _buildClosingSummary(Map<String, dynamic> data) {
+    final paymentMethods = <String, double>{};
+    for (final payment in data['entry']) {
+      final method = payment['mode_of_payment'] ?? 'غير محدد';
+      final amount = (payment['paid_amount'] as num).toDouble();
+      paymentMethods.update(
+        method,
+        (value) => value + amount,
+        ifAbsent: () => amount,
+      );
+    }
+    final totalSales = data['total_sales'] ?? 0.0;
+    final totalPayments = paymentMethods.values.fold(
+      0.0,
+      (sum, amount) => sum + amount,
+    );
+    final grandTotal = totalSales + totalPayments;
     return SingleChildScrollView(
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -238,16 +256,36 @@ class _HomePageState extends State<HomePage> with RouteAware {
               title: 'الفواتير',
               children: [
                 _buildSummaryRow('عدد الفواتير', '${data['invoice_count']}'),
+                const Divider(height: 20),
                 _buildSummaryRow(
                   'الإجمالي',
                   _formatCurrency(data['total_sales']),
                 ),
               ],
             ),
+            _buildSummaryCard(
+              title: 'المدفوعات',
+              children: [
+                ...paymentMethods.entries.map(
+                  (entry) =>
+                      _buildSummaryRow(entry.key, _formatCurrency(entry.value)),
+                ),
+                const Divider(height: 20),
+                _buildSummaryRow(
+                  'إجمالي',
+                  _formatCurrency(
+                    paymentMethods.values.fold(
+                      0.0,
+                      (sum, amount) => sum + amount,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
 
             Text(
-              'تفاصيل طرق الدفع',
+              'الدفع في فواتير',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -257,20 +295,17 @@ class _HomePageState extends State<HomePage> with RouteAware {
             const SizedBox(height: 8),
 
             Container(
-              width: double.infinity, // تأخذ العرض الكامل
+              width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal, // التمرير الأفقي عند الحاجة
+                scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  columnSpacing: 20, // تقليل المسافة بين الأعمدة
-                  dataRowHeight: 40, // ارتفاع الصفوف
-                  headingRowHeight: 40, // ارتفاع رأس الجدول
+                  columnSpacing: 5,
+                  dataRowHeight: 40,
+                  headingRowHeight: 40,
                   columns: const [
                     DataColumn(
-                      label: SizedBox(
-                        width: 100, // عرض ثابت للعمود الأول
-                        child: Text('طريقة الدفع'),
-                      ),
+                      label: SizedBox(width: 100, child: Text('طريقة الدفع')),
                     ),
                     DataColumn(
                       label: SizedBox(
@@ -311,6 +346,65 @@ class _HomePageState extends State<HomePage> with RouteAware {
               ),
             ),
 
+            // Text(
+            //   'المدفوعات',
+            //   style: TextStyle(
+            //     fontSize: 16,
+            //     fontWeight: FontWeight.bold,
+            //     color: Colors.grey[800],
+            //   ),
+            // ),
+            // Container(
+            //   width: double.infinity,
+            //   padding: const EdgeInsets.symmetric(horizontal: 8),
+            //   child: SingleChildScrollView(
+            //     scrollDirection: Axis.horizontal,
+            //     child: DataTable(
+            //       columnSpacing: 20,
+            //       dataRowHeight: 40,
+            //       headingRowHeight: 40,
+            //       columns: const [
+            //         DataColumn(
+            //           label: SizedBox(width: 100, child: Text('طريقة الدفع')),
+            //         ),
+            //         DataColumn(
+            //           label: SizedBox(
+            //             width: 100, // عرض ثابت للعمود الثاني
+            //             child: Text('المبلغ'),
+            //           ),
+            //           numeric: true,
+            //         ),
+            //       ],
+            //       rows:
+            //           data['entry'].map<DataRow>((payment) {
+            //             return DataRow(
+            //               cells: [
+            //                 DataCell(
+            //                   SizedBox(
+            //                     width: 100,
+            //                     child: Text(
+            //                       payment['mode_of_payment'],
+            //                       overflow:
+            //                           TextOverflow
+            //                               .ellipsis, // تقصير النص الطويل
+            //                     ),
+            //                   ),
+            //                 ),
+            //                 DataCell(
+            //                   SizedBox(
+            //                     width: 100,
+            //                     child: Text(
+            //                       _formatCurrency(payment['paid_amount']),
+            //                       textAlign: TextAlign.start,
+            //                     ),
+            //                   ),
+            //                 ),
+            //               ],
+            //             );
+            //           }).toList(),
+            //     ),
+            //   ),
+            // ),
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(12),
@@ -330,7 +424,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
                     ),
                   ),
                   Text(
-                    _formatCurrency(data['total_sales']),
+                    _formatCurrency(grandTotal),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Colors.blue[800],
@@ -378,10 +472,22 @@ class _HomePageState extends State<HomePage> with RouteAware {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: Colors.grey[600])),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: Colors.grey[600]),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );
@@ -400,10 +506,15 @@ class _HomePageState extends State<HomePage> with RouteAware {
     // جلب طرق الدفع
     final payments = await PosService.getPaymentMethods();
 
+    final paymentEntry = await PosService.getShiftPaymentEntries(
+      selectedPOSProfile!['name'],
+    );
+
     return {
       'invoice_count': invoices.length,
       'total_sales': invoices.fold(0.0, (sum, inv) => sum + inv['grand_total']),
       'payments': payments,
+      'entry': paymentEntry,
     };
   }
 
@@ -423,7 +534,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
           amount is String ? double.tryParse(amount) ?? 0 : (amount as num);
       return NumberFormat.currency(
         symbol: "د.ل",
-        decimalDigits: 2,
+        decimalDigits: 0,
         locale: 'ar_LY',
       ).format(parsedAmount);
     } catch (e) {
@@ -679,27 +790,26 @@ class _HomePageState extends State<HomePage> with RouteAware {
                   Icons.shopping_cart,
                   statistics['orders'].toString(),
                   'الطلبات',
+                  onTap: () => _navigateToOrders(context),
                 ),
                 _buildStatItem(
                   Icons.assignment_turned_in,
                   statistics['visits'].toString(),
                   'الزيارات',
+                  onTap: () => _navigateToVisits(context),
                 ),
                 _buildStatItem(
                   Icons.receipt,
                   statistics['invoices'].toString(),
                   'الفواتير',
+                  onTap: () => _navigateToInvoices(context),
                 ),
                 _buildStatItem(
                   Icons.assignment_return,
                   statistics['returns'].toString(),
                   'المرتجعات',
+                  onTap: () => _navigateToReturns(context),
                 ),
-                // _buildStatItem(
-                //   Icons.inventory,
-                //   statistics['items'].toString(),
-                //   'المخزون',
-                // ),
               ],
             ),
           ],
@@ -708,29 +818,82 @@ class _HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
-  Widget _buildStatItem(IconData icon, String count, String label) {
-    return Column(
-      children: [
-        Icon(icon, size: 28, color: secondaryColor),
-        const SizedBox(height: 8),
-        Text(
-          count,
-          style: TextStyle(
-            fontFamily: 'Cairo',
-            color: secondaryColor,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+  void _navigateToOrders(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => MaterialRequestScreen()),
+    );
+  }
+
+  void _navigateToVisits(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => VisitReportPage(filter: 0)),
+    );
+  }
+
+  void _navigateToInvoices(BuildContext context) {
+    final int type = 0;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => SalesInvoiceSummaryPage(invoiceType: type, filter: 0),
+      ),
+    );
+  }
+
+  void _navigateToReturns(BuildContext context) {
+    final int type = 1;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => SalesInvoiceSummaryPage(invoiceType: type, filter: 0),
+      ),
+    );
+  }
+
+  Widget _buildStatItem(
+    IconData icon,
+    String value,
+    String label, {
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: Colors.white.withOpacity(0.1),
         ),
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Cairo',
-            color: secondaryColor,
-            fontSize: 14,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 28, color: secondaryColor),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                color: secondaryColor.withOpacity(0.8),
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 

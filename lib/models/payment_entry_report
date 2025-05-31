@@ -1,0 +1,37 @@
+// lib/models/payment_entry_report.dart
+
+class PaymentEntryReport {
+  final String name;
+  final String party;
+  final String modeOfPayment;
+  final String postingDate;
+  final double paidAmount;
+
+  PaymentEntryReport({
+    required this.name,
+    required this.party,
+    required this.modeOfPayment,
+    required this.postingDate,
+    required this.paidAmount,
+  });
+
+  factory PaymentEntryReport.fromJson(Map<String, dynamic> json) {
+    return PaymentEntryReport(
+      name: json['name'] as String,
+      party: json['party'] as String? ?? '',
+      modeOfPayment: json['mode_of_payment'] as String? ?? '',
+      postingDate: json['posting_date'] as String? ?? '',
+      paidAmount: (json['paid_amount'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'party': party,
+      'mode_of_payment': modeOfPayment,
+      'posting_date': postingDate,
+      'paid_amount': paidAmount,
+    };
+  }
+}

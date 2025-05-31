@@ -1,7 +1,9 @@
 import 'package:drsaf/screen/bin_report_page.dart';
 import 'package:drsaf/screen/customer_ledger_summary_page.dart';
 import 'package:drsaf/screen/sales_invoice_summary_page.dart';
+import 'package:drsaf/screen/visit_report.dart';
 import 'package:flutter/material.dart';
+import 'payment_entry_report_page.dart';
 
 class ReportsScreen extends StatelessWidget {
   final Color primaryColor = const Color(0xFFBDB395);
@@ -42,7 +44,7 @@ class ReportsScreen extends StatelessWidget {
             _buildReportButton(
               context,
               icon: Icons.payments,
-              title: 'تقرير المدفوعات',
+              title: 'Payment Report',
               onTap: () => _navigateToReport(context, 'payments'),
             ),
             _buildReportButton(
@@ -50,6 +52,12 @@ class ReportsScreen extends StatelessWidget {
               icon: Icons.assignment_return,
               title: 'Outstanding',
               onTap: () => _navigateToReport(context, 'Outstanding'),
+            ),
+            _buildReportButton(
+              context,
+              icon: Icons.assignment_return,
+              title: 'Visit',
+              onTap: () => _navigateToReport(context, 'Visit'),
             ),
           ],
         ),
@@ -101,8 +109,10 @@ class ReportsScreen extends StatelessWidget {
   void _navigateToReport(BuildContext context, String reportType) {
     final Map<String, Widget> reportScreens = {
       'Stock Report': const BinReportPage(),
-      'Sales Report': const SalesInvoiceSummaryPage(),
+      'Sales Report': const SalesInvoiceSummaryPage(invoiceType: 0, filter: 3),
       'Outstanding': const CustomerLedgerPage(),
+      'payments': const PaymentEntryReportPage(),
+      'Visit': const VisitReportPage(filter: 3),
     };
 
     final Widget screen =

@@ -407,6 +407,72 @@ class PosService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getShiftPaymentEntries(
+    String shiftName,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final posOpeningName = prefs.getString('pos_open');
+    final response = await ApiClient.get(
+      '/api/resource/Payment Entry?filters=['
+      '["custom_pos_opening_shift","=","$posOpeningName"],'
+      '["docstatus","=",1]'
+      ']&fields=["name","posting_date","paid_amount","mode_of_payment"]',
+    );
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(
+        jsonDecode(response.body)['data'] ?? [],
+      );
+    }
+    return [];
+  }
+  // static Future<Map<String, dynamic>> getShiftPaymentEntries(
+  //   String shiftName,
+  // ) async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   final posOpeningName = prefs.getString('pos_open');
+
+  //   final response = await ApiClient.get(
+  //     '/api/resource/Payment Entry?filters=['
+  //     '["custom_pos_opening_shift","=","$posOpeningName"],'
+  //     '["docstatus","=",1]'
+  //     ']&fields=["name","posting_date","paid_amount","mode_of_payment"]',
+  //   );
+
+  //   if (response.statusCode == 200) {
+  //     final data = List<Map<String, dynamic>>.from(
+  //       jsonDecode(response.body)['data'] ?? [],
+  //     );
+
+  //     // تجميع المدفوعات حسب طريقة الدفع
+  //     final paymentSummary = <String, double>{};
+  //     for (final entry in data) {
+  //       final method = entry['mode_of_payment'] ?? 'غير محدد';
+  //       final amount = (entry['paid_amount'] as num).toDouble();
+  //       paymentSummary.update(
+  //         method,
+  //         (value) => value + amount,
+  //         ifAbsent: () => amount,
+  //       );
+  //     }
+
+  //     return {
+  //       'payment_entries': data, // جميع مدفوعات الدخول
+  //       'payment_summary': paymentSummary, // المجموع حسب طريقة الدفع
+  //       'total_payments': paymentSummary.values.fold(
+  //         0.0,
+  //         (sum, amount) => sum + amount,
+  //       ),
+  //     };
+  //   }
+
+  //   return {
+  //     'payment_entries': [],
+  //     'payment_summary': {},
+  //     'total_payments': 0.0,
+  //   };
+  // }
+
   static Future<List<Map<String, dynamic>>> getPaymentMethods() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -420,8 +486,7 @@ class PosService {
       final invoicesResponse = await ApiClient.get(
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
-        '["docstatus","=",1],'
-        '["posting_date",">=","${DateFormat('yyyy-MM-dd').format(DateTime.now())}"]'
+        '["docstatus","=",1]'
         ']&fields=["name"]',
       );
 
@@ -524,17 +589,20 @@ class PosService {
     }
   }
 
-  static Future<int> getInvoiceCount(String posOpeningName) async {
+  static Future<int> getInvoiceCount(
+    String posOpeningName,
+    String posOpeningShift,
+  ) async {
     try {
       final today = DateTime.now();
       final todayStr = DateFormat('yyyy-MM-dd').format(today);
-
+      print('************-------------$posOpeningShift');
       final response = await ApiClient.get(
         '/api/resource/Sales Invoice?filters=['
         '["pos_profile","=","$posOpeningName"],'
+        '["custom_pos_open_shift","=","$posOpeningShift"],'
         '["docstatus","=",1],'
-        '["is_return","=",0],'
-        '["posting_date","=","$todayStr"]'
+        '["is_return","=",0]'
         ']&fields=["name"]',
       );
       print('getInvoiceCount: ${response.statusCode} - ${response.body}');
@@ -589,7 +657,10 @@ class PosService {
     }
   }
 
-  static Future<int> getReturnInvoiceCount(String posOpeningName) async {
+  static Future<int> getReturnInvoiceCount(
+    String posOpeningName,
+    String posOpeningShift,
+  ) async {
     try {
       final today = DateTime.now();
       final todayStr = DateFormat('yyyy-MM-dd').format(today);
@@ -597,9 +668,9 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Sales Invoice?filters=['
         '["pos_profile","=","$posOpeningName"],'
+        '["custom_pos_open_shift","=","$posOpeningShift"],'
         '["docstatus","=",1],'
-        '["is_return","=",1],'
-        '["posting_date","=","$todayStr"]'
+        '["is_return","=",1]'
         ']&fields=["name"]',
       );
       print('getInvoiceCount: ${response.statusCode} - ${response.body}');

@@ -12,7 +12,7 @@ class ItemService {
     bool includeUOMs = true,
   }) async {
     try {
-      // 1. جلب إعدادات نقطة البيع من SharedPreferences
+      // 1. جلب إعدادات نقطة البيع مرة واحدة
       final prefs = await SharedPreferences.getInstance();
       final posProfileJson = prefs.getString('selected_pos_profile');
 
@@ -24,11 +24,21 @@ class ItemService {
       final posPriceList = posProfile['selling_price_list'];
       final warehouse = posProfile['warehouse'];
 
-      // 2. جلب الأصناف الأساسية
-      print('جلب الأصناف الأساسية...');
+      // 2. جلب الأصناف الأساسية مع الحقول الضرورية فقط
+      final fields = [
+        '"name"',
+        '"item_name"',
+        '"item_group"',
+        '"stock_uom"',
+        '"description"',
+        '"image"',
+        '"sales_uom"',
+      ];
+
       final itemsRes = await ApiClient.get(
-        '/api/resource/Item?fields=["name","item_name","item_group","stock_uom","description","image","sales_uom"]'
-        '&filters=[["disabled","=",0]]',
+        '/api/resource/Item?fields=[${fields.join(',')}]'
+        '&filters=[["disabled","=",0]]'
+        '&limit_page_length=1000', // زيادة الحد إذا كان هناك الكثير من الأصناف
       );
 
       if (itemsRes.statusCode != 200) {
@@ -38,147 +48,182 @@ class ItemService {
       final itemsData = json.decode(itemsRes.body)['data'] as List;
       if (itemsData.isEmpty) return [];
 
-      final List<Item> result = [];
-      final itemNames =
-          itemsData.map((item) => item['name'].toString()).toList();
+      // 3. معالجة متوازية للبيانات
+      final result = await _processItemsData(
+        itemsData,
+        posPriceList: posPriceList,
+        warehouse: warehouse,
+        includePrices: includePrices,
+        includeStock: includeStock,
+        includeUOMs: includeUOMs,
+      );
 
-      // 3. جلب الأسعار (إذا كان مطلوبًا)
-      final Map<String, double> pricesMap = {};
-      if (includePrices) {
-        print('جلب أسعار الأصناف...');
-        try {
-          // بناء فلتر الأسعار بناءً على sales_uom أو stock_uom
-          final priceFilters = [
-            '["price_list","=","$posPriceList"]',
-            '["selling","=",1]',
-            '["item_code","in",${json.encode(itemNames)}]',
-          ];
-
-          final pricesRes = await ApiClient.get(
-            '/api/resource/Item Price?fields=["item_code","price_list_rate","currency","uom"]'
-            '&filters=[${priceFilters.join(',')}]',
-          );
-
-          if (pricesRes.statusCode == 200) {
-            final pricesData = json.decode(pricesRes.body)['data'] as List;
-            print('تم جلب ${pricesData.length} سعرًا');
-
-            for (final item in itemsData) {
-              final itemName = item['name'].toString();
-              final salesUOM = item['sales_uom']?.toString();
-              final stockUOM = item['stock_uom']?.toString();
-              final uomToUse =
-                  salesUOM?.isNotEmpty == true ? salesUOM : stockUOM;
-
-              // البحث عن السعر المناسب للوحدة
-              final price = pricesData.firstWhere(
-                (p) => p['item_code'] == itemName && p['uom'] == uomToUse,
-                orElse: () => null,
-              );
-
-              if (price != null) {
-                final rate =
-                    double.tryParse(
-                      price['price_list_rate']?.toString() ?? '0',
-                    ) ??
-                    0;
-                pricesMap[itemName] = rate;
-                print('🔹 $itemName: $rate SAR (${price['uom']})');
-              }
-            }
-          }
-        } catch (e) {
-          print('تحذير: فشل جلب الأسعار - $e');
-        }
-      }
-
-      // 4. جلب المخزون (إذا كان مطلوبًا)
-      final Map<String, double> stockMap = {};
-      if (includeStock &&
-          warehouse != null &&
-          warehouse.toString().isNotEmpty) {
-        print('جلب كميات المخزون للمستودع $warehouse...');
-        try {
-          final stockRes = await ApiClient.get(
-            '/api/resource/Bin?fields=["item_code","actual_qty"]'
-            '&filters=['
-            '["item_code","in",${json.encode(itemNames)}],'
-            '["warehouse","=","$warehouse"]'
-            ']',
-          );
-
-          if (stockRes.statusCode == 200) {
-            final stockData = json.decode(stockRes.body)['data'] as List;
-            for (final stock in stockData) {
-              final qty =
-                  double.tryParse(stock['actual_qty']?.toString() ?? '0') ?? 0;
-              stockMap[stock['item_code'].toString()] = qty;
-            }
-            print('تم جلب مخزون ${stockMap.length} صنف');
-          }
-        } catch (e) {
-          print('تحذير: فشل جلب المخزون - $e');
-        }
-      }
-
-      // 5. جلب وحدات القياس الإضافية (إذا كان مطلوبًا)
-      final Map<String, List<Map<String, dynamic>>> uomsMap = {};
-      if (includeUOMs) {
-        print('جلب وحدات القياس الإضافية...');
-        for (final itemName in itemNames) {
-          try {
-            final uomRes = await ApiClient.get(
-              '/api/resource/Item/$itemName?fields=["uoms"]',
-            );
-
-            if (uomRes.statusCode == 200) {
-              final itemData = json.decode(uomRes.body)['data'];
-              if (itemData['uoms'] != null && itemData['uoms'] is List) {
-                uomsMap[itemName] =
-                    (itemData['uoms'] as List).map((uom) {
-                      return {
-                        'uom': uom['uom']?.toString() ?? '',
-                        'conversion_factor':
-                            double.tryParse(
-                              uom['conversion_factor']?.toString() ?? '1',
-                            ) ??
-                            1.0,
-                      };
-                    }).toList();
-              }
-            }
-          } catch (e) {
-            print('تحذير: فشل جلب وحدات القياس للصنف $itemName - $e');
-          }
-        }
-      }
-
-      // 6. دمج البيانات وبناء النتيجة النهائية
-      print('بناء قائمة الأصناف النهائية...');
-      for (final item in itemsData) {
-        try {
-          final itemName = item['name'].toString();
-          result.add(
-            Item.fromJson({
-              ...item,
-              'rate': pricesMap[itemName] ?? 0.0,
-              'currency': pricesMap.containsKey(itemName) ? 'SAR' : null,
-              'stock_qty': stockMap[itemName] ?? 0.0,
-              'additional_uoms': uomsMap[itemName] ?? [],
-            }),
-          );
-        } catch (e, stack) {
-          print('خطأ في معالجة الصنف ${item['name']}: $e');
-          print('Stack trace: $stack');
-        }
-      }
-
-      print('تم جلب ${result.length} صنف بنجاح');
       return result;
     } catch (e, stack) {
       print('!!!! خطأ رئيسي في getItems: $e');
       print('Stack trace: $stack');
       throw Exception('فشل في جلب الأصناف: ${e.toString()}');
+    }
+  }
+
+  static Future<List<Item>> _processItemsData(
+    List<dynamic> itemsData, {
+    required dynamic posPriceList,
+    required dynamic warehouse,
+    required bool includePrices,
+    required bool includeStock,
+    required bool includeUOMs,
+  }) async {
+    final itemNames = itemsData.map((item) => item['name'].toString()).toList();
+    final result = <Item>[];
+
+    // 1. جلب الأسعار والمخزون بشكل متوازي إذا كان مطلوباً
+    final futures = <Future>[];
+
+    final pricesMap = <String, double>{};
+    if (includePrices) {
+      futures.add(_fetchPrices(itemNames, posPriceList, pricesMap));
+    }
+
+    final stockMap = <String, double>{};
+    if (includeStock && warehouse != null && warehouse.toString().isNotEmpty) {
+      futures.add(_fetchStock(itemNames, warehouse.toString(), stockMap));
+    }
+
+    await Future.wait(futures);
+
+    // 2. جلب وحدات القياس الإضافية إذا كان مطلوباً
+    final uomsMap = <String, List<Map<String, dynamic>>>{};
+    if (includeUOMs) {
+      await _fetchAdditionalUOMs(itemNames, uomsMap);
+    }
+
+    // 3. بناء النتيجة النهائية
+    for (final item in itemsData) {
+      try {
+        final itemName = item['name'].toString();
+        result.add(
+          Item.fromJson({
+            ...item,
+            'rate': pricesMap[itemName] ?? 0.0,
+            'currency': pricesMap.containsKey(itemName) ? 'SAR' : null,
+            'stock_qty': stockMap[itemName] ?? 0.0,
+            'additional_uoms': uomsMap[itemName] ?? [],
+          }),
+        );
+      } catch (e, stack) {
+        print('خطأ في معالجة الصنف ${item['name']}: $e');
+        print('Stack trace: $stack');
+      }
+    }
+
+    return result;
+  }
+
+  static Future<void> _fetchPrices(
+    List<String> itemNames,
+    dynamic posPriceList,
+    Map<String, double> pricesMap,
+  ) async {
+    try {
+      final priceFilters = [
+        '["price_list","=","$posPriceList"]',
+        '["selling","=",1]',
+        '["item_code","in",${json.encode(itemNames)}]',
+      ];
+
+      final pricesRes = await ApiClient.get(
+        '/api/resource/Item Price?fields=["item_code","price_list_rate","currency","uom"]'
+        '&filters=[${priceFilters.join(',')}]'
+        '&limit_page_length=1000',
+      );
+
+      if (pricesRes.statusCode == 200) {
+        final pricesData = json.decode(pricesRes.body)['data'] as List;
+        for (final price in pricesData) {
+          final rate =
+              double.tryParse(price['price_list_rate']?.toString() ?? '0') ?? 0;
+          pricesMap[price['item_code'].toString()] = rate;
+        }
+      }
+    } catch (e) {
+      print('تحذير: فشل جلب الأسعار - $e');
+    }
+  }
+
+  static Future<void> _fetchStock(
+    List<String> itemNames,
+    String warehouse,
+    Map<String, double> stockMap,
+  ) async {
+    try {
+      final stockRes = await ApiClient.get(
+        '/api/resource/Bin?fields=["item_code","actual_qty"]'
+        '&filters=['
+        '["item_code","in",${json.encode(itemNames)}],'
+        '["actual_qty",">","0"],'
+        '["warehouse","=","$warehouse"]'
+        ']'
+        '&limit_page_length=1000',
+      );
+
+      if (stockRes.statusCode == 200) {
+        final stockData = json.decode(stockRes.body)['data'] as List;
+        for (final stock in stockData) {
+          final qty =
+              double.tryParse(stock['actual_qty']?.toString() ?? '0') ?? 0;
+          stockMap[stock['item_code'].toString()] = qty;
+        }
+      }
+    } catch (e) {
+      print('تحذير: فشل جلب المخزون - $e');
+    }
+  }
+
+  static Future<void> _fetchAdditionalUOMs(
+    List<String> itemNames,
+    Map<String, List<Map<String, dynamic>>> uomsMap,
+  ) async {
+    try {
+      // جلب دفعات من الأصناف بدلاً من كل صنف على حدة
+      const batchSize = 20;
+      for (var i = 0; i < itemNames.length; i += batchSize) {
+        final batch = itemNames.sublist(
+          i,
+          i + batchSize > itemNames.length ? itemNames.length : i + batchSize,
+        );
+
+        await Future.wait(
+          batch.map((itemName) async {
+            try {
+              final uomRes = await ApiClient.get(
+                '/api/resource/Item/$itemName?fields=["uoms"]',
+              );
+
+              if (uomRes.statusCode == 200) {
+                final itemData = json.decode(uomRes.body)['data'];
+                if (itemData['uoms'] != null && itemData['uoms'] is List) {
+                  uomsMap[itemName] =
+                      (itemData['uoms'] as List).map((uom) {
+                        return {
+                          'uom': uom['uom']?.toString() ?? '',
+                          'conversion_factor':
+                              double.tryParse(
+                                uom['conversion_factor']?.toString() ?? '1',
+                              ) ??
+                              1.0,
+                        };
+                      }).toList();
+                }
+              }
+            } catch (e) {
+              print('تحذير: فشل جلب وحدات القياس للصنف $itemName - $e');
+            }
+          }),
+        );
+      }
+    } catch (e) {
+      print('تحذير: فشل جلب وحدات القياس الإضافية - $e');
     }
   }
 

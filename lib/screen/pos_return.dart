@@ -69,7 +69,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         products = results[0] as List<Item>;
         filteredProducts = products;
         customers = results[1] as List<Customer>;
-        selectedCustomer = results[2] as Customer?;
+        // selectedCustomer = results[2] as Customer?;
         isLoading = false;
         isFirstLoad = false;
       });
@@ -931,7 +931,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     // 1. البيانات الأساسية
     String selectedUnit = item['uom'] ?? item['stock_uom'] ?? 'وحدة';
     double currentPrice = item['price'];
-    String itemCode = item['item_name']?.toString() ?? '';
+    String itemCode = item['name']?.toString() ?? '';
     String priceList = 'البيع القياسية';
 
     // 2. قائمة الوحدات المتاحة
@@ -1082,6 +1082,9 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     String unit,
     String priceList,
   ) async {
+    print(itemCode);
+    print(unit);
+    print(priceList);
     try {
       final response = await ApiClient.get(
         '/api/resource/Item Price?fields=["price_list_rate"]'

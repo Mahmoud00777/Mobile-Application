@@ -8,6 +8,7 @@ import 'api_client.dart';
 class MaterialRequestService {
   static Future<Map<String, dynamic>> submitMaterialRequest(
     MaterialRequest request,
+    List<Map<String, dynamic>> items,
   ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -16,7 +17,7 @@ class MaterialRequestService {
       final posProfileName = posProfile['name'] ?? 'Default POS Profile';
 
       print('إنشاء طلب مواد بحالة "مقدمة" مباشرة');
-
+      print('بيانات الطلب المرسلة: ${request.toJson()}');
       // 1. إنشاء الطلب كمسودة أولاً (docstatus=0)
       final createResponse = await ApiClient.postJson(
         '/api/resource/Material Request',
@@ -28,13 +29,13 @@ class MaterialRequestService {
           'custom_pos_profile': posProfileName,
           'docstatus': 0, // إنشاء كمسودة أولاً
           'items':
-              request.items
+              items
                   .map(
                     (item) => {
-                      'item_code': item.itemCode,
-                      'qty': item.qty,
-                      'schedule_date': request.scheduleDate,
-                      'warehouse': request.warehouse,
+                      'item_code': item['name'],
+                      'item_name': item['item_name'],
+                      'qty': item['quantity'],
+                      'uom': item['uom'] ?? 'Nos',
                     },
                   )
                   .toList(),

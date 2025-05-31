@@ -43,6 +43,9 @@ class AuthService {
     // حذف بيانات الجلسة
     await prefs.remove('currentUser');
     await prefs.remove('session_cookie');
+    await prefs.remove('selected_pos_profile');
+    await prefs.remove('pos_time');
+    await prefs.remove('pos_open');
 
     currentUser = null;
     ApiClient.clearCookie();

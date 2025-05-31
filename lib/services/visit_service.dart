@@ -88,4 +88,47 @@ class VisitService {
       );
     }
   }
+
+  static Future<List<Visit>> fetchVisitsByProfileDate({
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final posProfileJson = prefs.getString('selected_pos_profile');
+    if (posProfileJson == null) {
+      throw Exception('POS profile not found');
+    }
+    final posProfileName = json.decode(posProfileJson)['name'];
+
+    // Build filters
+    final filters = <List<dynamic>>[
+      ['pos_profile', '=', posProfileName],
+      if (from != null)
+        ['data_time', '>=', from.toIso8601String().split('T').first],
+      if (to != null)
+        ['data_time', '<=', to.toIso8601String().split('T').first],
+    ];
+    final query =
+        Uri(
+          queryParameters: {
+            'filters': jsonEncode(filters),
+            'fields': jsonEncode([
+              'name',
+              'customer',
+              'select_state',
+              'data_time',
+            ]),
+            'order_by': 'data_time desc',
+          },
+        ).query;
+
+    final res = await ApiClient.get('/api/resource/Visit?$query');
+
+    if (res.statusCode != 200) {
+      throw Exception('Failed to load visit report');
+    }
+
+    final data = json.decode(res.body)['data'] as List<dynamic>;
+    return data.map((e) => Visit.fromJson(e as Map<String, dynamic>)).toList();
+  }
 }

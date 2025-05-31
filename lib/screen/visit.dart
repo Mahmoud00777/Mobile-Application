@@ -579,23 +579,17 @@ class _VisitScreenState extends State<VisitScreen> {
                   borderRadius: BorderRadius.circular(8),
                   color: Colors.grey[100],
                 ),
-                child:
-                    visit.image.isNotEmpty
-                        ? ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            visit.image,
-                            width: 70,
-                            height: 70,
-                            fit: BoxFit.cover,
-                            errorBuilder:
-                                (context, error, stackTrace) => const Icon(
-                                  Icons.image_not_supported,
-                                  size: 30,
-                                ),
-                          ),
-                        )
-                        : const Icon(Icons.image, size: 30, color: Colors.grey),
+                child: Container(
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.grey[100],
+                  ),
+                  child: _buildVisitImage(
+                    visit.image,
+                  ), // استدعاء دالة مساعدة لعرض الصورة
+                ),
               ),
               const SizedBox(width: 12),
 
@@ -894,6 +888,49 @@ class _VisitScreenState extends State<VisitScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildVisitImage(String imageUrl) {
+    if (imageUrl.isEmpty) {
+      return const Icon(Icons.image, size: 30, color: Colors.grey);
+    }
+    print('imageUrl =======$imageUrl');
+    try {
+      final fullUrl =
+          imageUrl.startsWith('http')
+              ? imageUrl
+              : 'https://demo2.ababeel.ly/$imageUrl';
+      print('fullUrl =======$fullUrl');
+
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          fullUrl,
+          width: 70,
+          height: 70,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: CircularProgressIndicator(
+                value:
+                    loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                            loadingProgress.expectedTotalBytes!
+                        : null,
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            print('Error loading image: $error');
+            return const Icon(Icons.broken_image, size: 30);
+          },
+        ),
+      );
+    } catch (e) {
+      print('Image loading exception: $e');
+      return const Icon(Icons.image_not_supported, size: 30);
+    }
   }
 }
 

@@ -1,5 +1,5 @@
-import 'package:drsaf/services/warehouse_service.dart';
 import 'package:flutter/material.dart';
+import 'package:drsaf/services/warehouse_service.dart';
 import '../models/bin_report.dart';
 import '../services/bin_report_service.dart';
 
@@ -21,19 +21,17 @@ class _BinReportPageState extends State<BinReportPage> {
   final int _pageSize = 20;
   bool _hasMore = true;
 
+  final Color primaryColor = const Color(0xFFBDB395);
+  final Color secondaryColor = Colors.white;
+
   @override
   void initState() {
     super.initState();
-    _itemController.addListener(() {
-      // whenever item text changes, reload report
-      _fetchPage(reset: true);
-    });
     _loadWarehouses();
   }
 
   @override
   void dispose() {
-    _itemController.removeListener(() {});
     _itemController.dispose();
     super.dispose();
   }
@@ -41,21 +39,33 @@ class _BinReportPageState extends State<BinReportPage> {
   Future<void> _loadWarehouses() async {
     setState(() => _loading = true);
     try {
-      final list = await WarehouseService.getWarehouses();
+      // 1. جلب المخزن من ملف البيع فقط
+      final warehouse = await WarehouseService.getWarehouses();
+
       setState(() {
-        _warehouses = list.map((w) => w.name).toList();
-        _selectedWarehouse = _warehouses.isNotEmpty ? _warehouses.first : null;
+        // 2. تعبئة القائمة بالمخزن الوحيد إن وجد
+        _warehouses = warehouse != null ? [warehouse.name] : [];
+
+        // 3. تحديد المخزن المحدد (سيكون الوحيد في القائمة)
+        _selectedWarehouse = warehouse?.name;
       });
-      _fetchPage(reset: true);
+
+      // 4. تحميل البيانات المرتبطة بالمخزن
+      if (_selectedWarehouse != null) {
+        _fetchPage(reset: true);
+      }
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = 'حدث خطأ: ${e.toString()}');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في جلب مخزن ملف البيع: ${e.toString()}')),
+      );
     } finally {
       setState(() => _loading = false);
     }
   }
 
   Future<void> _fetchPage({bool reset = false}) async {
-    if (_loading || !_hasMore && !reset) return;
+    if (_loading || (!_hasMore && !reset)) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -86,91 +96,159 @@ class _BinReportPageState extends State<BinReportPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Bin Report')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value: _selectedWarehouse,
-                    items:
-                        _warehouses
-                            .map(
-                              (w) => DropdownMenuItem(value: w, child: Text(w)),
-                            )
-                            .toList(),
-                    onChanged: (v) {
-                      setState(() {
-                        _selectedWarehouse = v;
-                      });
-                      _fetchPage(reset: true);
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _itemController,
-                    decoration: InputDecoration(
-                      labelText: 'Item Code',
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(),
+    return Theme(
+      data: Theme.of(context).copyWith(
+        primaryColor: primaryColor,
+        colorScheme: Theme.of(
+          context,
+        ).colorScheme.copyWith(primary: primaryColor, secondary: primaryColor),
+        inputDecorationTheme: InputDecorationTheme(
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: primaryColor, width: 2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        textSelectionTheme: TextSelectionThemeData(
+          cursorColor: primaryColor,
+          selectionColor: primaryColor.withOpacity(0.4),
+          selectionHandleColor: primaryColor,
+        ),
+      ),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Bin Report'),
+          backgroundColor: primaryColor,
+          foregroundColor: secondaryColor,
+          centerTitle: true,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<String>(
+                      decoration: InputDecoration(
+                        labelText: 'المخزن',
+                        filled: true,
+                        fillColor: secondaryColor,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      isExpanded: true,
+                      value: _selectedWarehouse,
+                      items:
+                          _warehouses
+                              .map(
+                                (w) =>
+                                    DropdownMenuItem(value: w, child: Text(w)),
+                              )
+                              .toList(),
+                      onChanged: (v) {
+                        setState(() => _selectedWarehouse = v);
+                        _fetchPage(reset: true);
+                      },
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _data.length + (_hasMore ? 1 : 0),
-                itemBuilder: (ctx, i) {
-                  if (i < _data.length) {
-                    final row = _data[i];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 6),
-                      elevation: 2,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: _itemController,
+                      decoration: InputDecoration(
+                        labelText: 'الصنف أو الكود',
+                        filled: true,
+                        fillColor: secondaryColor,
+                        prefixIcon: Icon(Icons.search, color: primaryColor),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onSubmitted: (_) => _fetchPage(reset: true),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => _fetchPage(reset: true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: secondaryColor,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: ListTile(
-                        title: Text(
-                          row.itemCode,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text('Warehouse: ${row.warehouse}'),
-                        trailing: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text('Actual: ${row.actualQty}'),
-                            Text('Projected: ${row.projectedQty}'),
-                          ],
-                        ),
-                      ),
-                    );
-                  } else {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Center(
-                        child:
-                            _loading
-                                ? const CircularProgressIndicator()
-                                : ElevatedButton(
-                                  onPressed: () => _fetchPage(),
-                                  child: const Text('Load More'),
-                                ),
-                      ),
-                    );
-                  }
-                },
+                    ),
+                    child: const Icon(Icons.search),
+                  ),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Expanded(
+                child:
+                    _error != null
+                        ? Center(child: Text('Error: $_error'))
+                        : ListView.builder(
+                          itemCount: _data.length + (_hasMore ? 1 : 0),
+                          itemBuilder: (ctx, i) {
+                            if (i < _data.length) {
+                              final row = _data[i];
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                color: secondaryColor,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                elevation: 3,
+                                child: ListTile(
+                                  title: Text(
+                                    row.itemCode,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: primaryColor,
+                                    ),
+                                  ),
+                                  subtitle: Text('المخزن: ${row.warehouse}'),
+                                  trailing: Text(
+                                    'الكمية: ${row.actualQty}',
+                                    style: TextStyle(
+                                      fontSize: 18, // حجم الخط المكبر
+                                      fontWeight: FontWeight.bold,
+                                      color: primaryColor,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            } else {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                child: Center(
+                                  child:
+                                      _loading
+                                          ? const CircularProgressIndicator()
+                                          : ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: primaryColor,
+                                              foregroundColor: secondaryColor,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                            onPressed: () => _fetchPage(),
+                                            child: const Text('تحميل المزيد'),
+                                          ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+              ),
+            ],
+          ),
         ),
       ),
     );
