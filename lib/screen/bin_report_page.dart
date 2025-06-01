@@ -21,9 +21,10 @@ class _BinReportPageState extends State<BinReportPage> {
   final int _pageSize = 20;
   bool _hasMore = true;
 
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
-
+  final Color primaryColor = const Color(0xFFB6B09F);
+  final Color secondaryColor = const Color(0xFFEAE4D5);
+  final Color backgroundColor = const Color(0xFFF2F2F2);
+  final Color blackColor = const Color.fromARGB(255, 85, 84, 84);
   @override
   void initState() {
     super.initState();
@@ -116,9 +117,9 @@ class _BinReportPageState extends State<BinReportPage> {
       ),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Bin Report'),
+          title: const Text('تقرير المخزون'),
           backgroundColor: primaryColor,
-          foregroundColor: secondaryColor,
+          foregroundColor: Colors.white,
           centerTitle: true,
         ),
         body: Padding(
@@ -206,7 +207,7 @@ class _BinReportPageState extends State<BinReportPage> {
                                     row.itemCode,
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      color: primaryColor,
+                                      color: Color.fromARGB(255, 85, 84, 84),
                                     ),
                                   ),
                                   subtitle: Text('المخزن: ${row.warehouse}'),
@@ -215,7 +216,7 @@ class _BinReportPageState extends State<BinReportPage> {
                                     style: TextStyle(
                                       fontSize: 18, // حجم الخط المكبر
                                       fontWeight: FontWeight.bold,
-                                      color: primaryColor,
+                                      color: Color.fromARGB(255, 85, 84, 84),
                                     ),
                                   ),
                                 ),

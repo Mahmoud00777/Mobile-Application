@@ -15,9 +15,10 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
   String _searchText = '';
   bool _isLoading = true;
   final _searchController = TextEditingController();
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
-
+  final Color primaryColor = Color(0xFFB6B09F);
+  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
   @override
   void initState() {
     super.initState();
@@ -53,7 +54,9 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
       appBar: AppBar(
         title: const Text('دفعات العملاء'),
         backgroundColor: primaryColor,
-        iconTheme: IconThemeData(color: secondaryColor),
+        foregroundColor: Colors.white,
+        centerTitle: true,
+        // iconTheme: IconThemeData(color: secondaryColor),
       ),
       body: Column(
         children: [
@@ -175,8 +178,8 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: FloatingActionButton(
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async {
+              final result = await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => CreatePaymentPage()),
               );

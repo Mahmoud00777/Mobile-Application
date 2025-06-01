@@ -2,52 +2,51 @@ import 'package:drsaf/services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Make sure this import matches the path to your AuthService class
-
-/// A reusable drawer that shows a header with the current user's name (and icon),
-/// plus menu items for About, Help, Notifications, and Logout.
 class AppDrawer extends StatelessWidget {
   final VoidCallback onLogout;
+  final Color primaryColor = const Color(0xFFB6B09F);
+  final Color secondaryColor = const Color(0xFFEAE4D5);
+  final Color backgroundColor = const Color(0xFFF2F2F2);
+  final Color blackColor = const Color.fromARGB(255, 85, 84, 84);
 
   const AppDrawer({Key? key, required this.onLogout}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Drawer(
+      backgroundColor: backgroundColor,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // DrawerHeader with user icon + username via FutureBuilder
+            // رأس الدرج مع معلومات المستخدم
             DrawerHeader(
               decoration: BoxDecoration(
-                color:
-                    Colors.blueAccent, // Adjust to your theme's primary color
+                color: primaryColor,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(15),
+                  bottomRight: Radius.circular(15),
+                ),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Static icon on the left
-                  const CircleAvatar(
+                  // أيقونة المستخدم
+                  CircleAvatar(
                     radius: 30,
-                    backgroundColor: Colors.white,
-                    child: Icon(
-                      Icons.person,
-                      size: 40,
-                      color: Colors.blueAccent,
-                    ),
+                    backgroundColor: secondaryColor,
+                    child: Icon(Icons.person, size: 40, color: primaryColor),
                   ),
                   const SizedBox(width: 16),
-                  // Username loaded asynchronously
+                  // اسم المستخدم
                   Expanded(
                     child: FutureBuilder<String?>(
                       future: AuthService.getCurrentUser(),
                       builder: (context, snapshot) {
-                        // While waiting, show a placeholder
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
                           return Text(
-                            'Loading...',
+                            'جاري التحميل...',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -56,17 +55,16 @@ class AppDrawer extends StatelessWidget {
                           );
                         }
 
-                        // If there was an error or no user, show “Guest”
                         final name =
                             (snapshot.hasData &&
                                     snapshot.data != null &&
                                     snapshot.data!.isNotEmpty)
                                 ? snapshot.data!
-                                : 'Guest';
+                                : 'ضيف';
 
                         return Text(
                           name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Colors.white,
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -79,110 +77,110 @@ class AppDrawer extends StatelessWidget {
               ),
             ),
 
-            // “About” ListTile
-            ListTile(
-              leading: const Icon(Icons.info, color: Colors.black87),
-              title: const Text('About', style: TextStyle(fontSize: 16)),
-              onTap: () {
-                Navigator.pop(context); // Close the drawer
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const AboutPage()),
-                );
-              },
-            ),
-
-            // “Help” ListTile
-            ListTile(
-              leading: const Icon(Icons.help_outline, color: Colors.black87),
-              title: const Text('Help', style: TextStyle(fontSize: 16)),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const HelpPage()),
-                );
-              },
-            ),
-
-            // “Notifications” ListTile
-            ListTile(
-              leading: const Icon(Icons.notifications, color: Colors.black87),
-              title: const Text(
-                'Notifications',
-                style: TextStyle(fontSize: 16),
-              ),
+            // عناصر القائمة
+            _buildListTile(
+              icon: Icons.info,
+              title: 'حول التطبيق',
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const NotificationsPage(),
+                    builder: (context) => AboutPage(primaryColor: primaryColor),
                   ),
                 );
               },
             ),
 
-            const Divider(height: 1),
-
-            // Push Logout to the bottom
-
-            // “Logout” ListTile
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.black87),
-              title: const Text('Logout', style: TextStyle(fontSize: 16)),
+            _buildListTile(
+              icon: Icons.help_outline,
+              title: 'المساعدة',
               onTap: () {
-                Navigator.pop(context); // Close the drawer first
-                onLogout(); // Invoke the callback passed from HomePage
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => HelpPage(primaryColor: primaryColor),
+                  ),
+                );
               },
             ),
+
+            // زر تسجيل الخروج في الأعلى بعد عناصر القائمة
+            _buildListTile(
+              icon: Icons.logout,
+              title: 'تسجيل الخروج',
+              onTap: () {
+                Navigator.pop(context);
+                onLogout();
+              },
+            ),
+
+            // إزالة Spacer و Divider
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: blackColor),
+      title: Text(title, style: TextStyle(color: blackColor, fontSize: 16)),
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      minLeadingWidth: 0,
+      dense: true,
+    );
+  }
+}
+
+// صفحات وهمية
+class AboutPage extends StatelessWidget {
+  final Color primaryColor;
+
+  const AboutPage({Key? key, required this.primaryColor}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('حول التطبيق'),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
+      ),
+      body: const Padding(
+        padding: EdgeInsets.all(20),
+        child: Text(
+          'هذه صفحة حول التطبيق. يمكنك هنا عرض معلومات عن التطبيق والإصدار والمطورين.',
+          style: TextStyle(fontSize: 18),
         ),
       ),
     );
   }
 }
 
-/// Dummy placeholders for navigation targets.
-/// Replace these with your actual pages in your project.
-class AboutPage extends StatelessWidget {
-  const AboutPage({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('About')),
-      body: const Center(
-        child: Text('This is the About page.', style: TextStyle(fontSize: 18)),
-      ),
-    );
-  }
-}
-
 class HelpPage extends StatelessWidget {
-  const HelpPage({Key? key}) : super(key: key);
+  final Color primaryColor;
+
+  const HelpPage({Key? key, required this.primaryColor}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Help')),
-      body: const Center(
-        child: Text('This is the Help page.', style: TextStyle(fontSize: 18)),
+      appBar: AppBar(
+        title: const Text('المساعدة'),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
       ),
-    );
-  }
-}
-
-class NotificationsPage extends StatelessWidget {
-  const NotificationsPage({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
-      body: const Center(
+      body: const Padding(
+        padding: EdgeInsets.all(20),
         child: Text(
-          'This is the Notifications page.',
+          'هذه صفحة المساعدة. يمكنك هنا العثور على إجابات للأسئلة الشائعة ودلائل الاستخدام.',
           style: TextStyle(fontSize: 18),
         ),
       ),

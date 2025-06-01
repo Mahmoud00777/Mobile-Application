@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:drsaf/main.dart';
+import 'package:drsaf/screen/login.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
@@ -17,10 +19,10 @@ class _VisitScreenState extends State<VisitScreen> {
   late Future<List<Visit>> _visitsFuture;
   String _filterOption = 'all';
   final ScrollController _scrollController = ScrollController();
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
-  final Color backgroundColor = const Color(0xFFF6F0F0);
-  final Color pressedColor = const Color(0xFFF2E2B1);
+  final Color primaryColor = Color(0xFFB6B09F);
+  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
   bool _isMounted = false;
   File? _imageFile;
   Position? _currentPosition;
@@ -454,8 +456,11 @@ class _VisitScreenState extends State<VisitScreen> {
           FloatingActionButton(
             heroTag: 'filterBtn',
             onPressed: () => _showFilterOptions(context),
-            backgroundColor: Colors.white,
-            child: const Icon(Icons.filter_alt, color: Colors.black),
+            backgroundColor: Color(0xFFB6B09F),
+            child: const Icon(
+              Icons.filter_alt,
+              color: Color.fromARGB(255, 255, 255, 255),
+            ),
           ),
         ],
       ),
@@ -731,6 +736,12 @@ class _VisitScreenState extends State<VisitScreen> {
                             decoration: InputDecoration(
                               labelText: 'حالة الزيارة',
                               border: OutlineInputBorder(),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(
+                                  color: AppColors.black,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                             items:
                                 [
@@ -760,7 +771,13 @@ class _VisitScreenState extends State<VisitScreen> {
                             maxLines: 3,
                             decoration: InputDecoration(
                               labelText: 'ملاحظات',
-                              border: OutlineInputBorder(),
+
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(
+                                  color: AppColors.black,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                             onChanged: (value) {
                               setModalState(() => isModified = true);

@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import 'payment_entry_report_page.dart';
 
 class ReportsScreen extends StatelessWidget {
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
-  final Color backgroundColor = const Color(0xFFF6F0F0);
+  // تعريف الألوان المطلوبة
+  final Color primaryColor = const Color(0xFFB6B09F);
+  final Color secondaryColor = const Color(0xFFEAE4D5);
+  final Color backgroundColor = const Color(0xFFF2F2F2);
+  final Color blackColor = const Color.fromARGB(255, 85, 84, 84);
 
   const ReportsScreen({super.key});
 
@@ -17,10 +19,21 @@ class ReportsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: const Text('التقارير', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'التقارير',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
         centerTitle: true,
         backgroundColor: primaryColor,
         iconTheme: const IconThemeData(color: Colors.white),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        ),
+        // elevation: 4,
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -28,35 +41,36 @@ class ReportsScreen extends StatelessWidget {
           crossAxisCount: 2,
           mainAxisSpacing: 20,
           crossAxisSpacing: 20,
+          childAspectRatio: 0.9,
           children: [
             _buildReportButton(
               context,
               icon: Icons.bar_chart,
-              title: 'Sales Report',
+              title: 'تقرير المبيعات',
               onTap: () => _navigateToReport(context, 'Sales Report'),
             ),
             _buildReportButton(
               context,
               icon: Icons.inventory,
-              title: 'Stock Report',
+              title: 'تقرير المخزون',
               onTap: () => _navigateToReport(context, 'Stock Report'),
             ),
             _buildReportButton(
               context,
               icon: Icons.payments,
-              title: 'Payment Report',
+              title: 'تقرير المدفوعات',
               onTap: () => _navigateToReport(context, 'payments'),
             ),
             _buildReportButton(
               context,
               icon: Icons.assignment_return,
-              title: 'Outstanding',
+              title: 'تقرير المستحقات',
               onTap: () => _navigateToReport(context, 'Outstanding'),
             ),
             _buildReportButton(
               context,
-              icon: Icons.assignment_return,
-              title: 'Visit',
+              icon: Icons.location_on,
+              title: 'تقرير الزيارات',
               onTap: () => _navigateToReport(context, 'Visit'),
             ),
           ],
@@ -73,30 +87,51 @@ class ReportsScreen extends StatelessWidget {
   }) {
     return Card(
       elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(15),
+        side: BorderSide(color: primaryColor.withOpacity(0.5), width: 1.5),
+      ),
+      shadowColor: blackColor.withOpacity(0.3),
       child: InkWell(
         borderRadius: BorderRadius.circular(15),
         onTap: onTap,
+        splashColor: primaryColor.withOpacity(0.2),
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(15),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [primaryColor.withOpacity(0.7), primaryColor],
-            ),
+            color: secondaryColor,
+            boxShadow: [
+              BoxShadow(
+                color: blackColor.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 40, color: secondaryColor),
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: primaryColor.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 35, color: blackColor),
+              ),
               const SizedBox(height: 15),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: secondaryColor,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: blackColor,
+                    height: 1.3,
+                  ),
                 ),
               ),
             ],
@@ -109,7 +144,7 @@ class ReportsScreen extends StatelessWidget {
   void _navigateToReport(BuildContext context, String reportType) {
     final Map<String, Widget> reportScreens = {
       'Stock Report': const BinReportPage(),
-      'Sales Report': const SalesInvoiceSummaryPage(invoiceType: 0, filter: 3),
+      'Sales Report': const SalesInvoiceSummaryPage(),
       'Outstanding': const CustomerLedgerPage(),
       'payments': const PaymentEntryReportPage(),
       'Visit': const VisitReportPage(filter: 3),
@@ -130,38 +165,6 @@ class DefaultReportPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('التقرير غير متوفر')),
       body: const Center(child: Text('هذا التقرير غير متوفر حالياً')),
-    );
-  }
-}
-
-class ReportDetailsScreen extends StatelessWidget {
-  final String reportType;
-
-  const ReportDetailsScreen({super.key, required this.reportType});
-
-  @override
-  Widget build(BuildContext context) {
-    String title;
-    switch (reportType) {
-      case 'sales':
-        title = 'Sales Report';
-        break;
-      case 'Stock Report':
-        title = 'Stock Report';
-        break;
-      case 'payments':
-        title = 'Payment Report';
-        break;
-      case 'returns':
-        title = 'Return Report';
-        break;
-      default:
-        title = 'Report';
-    }
-
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(child: Text('سيتم عرض $title هنا')),
     );
   }
 }

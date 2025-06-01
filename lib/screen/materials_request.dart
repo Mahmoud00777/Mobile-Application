@@ -21,7 +21,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   Warehouse? selectedWarehouse;
   List<Item> availableItems = [];
   List<Warehouse> availableWarehouses = [];
-  final Color primaryColor = const Color(0xFFBDB395);
+  final Color primaryColor = const Color(0xFFB6B09F);
   List<Map<String, dynamic>> selectedItems = [];
   final List<String> requestReasons = [
     'Purchase',

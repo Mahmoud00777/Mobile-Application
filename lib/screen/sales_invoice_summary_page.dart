@@ -4,12 +4,12 @@ import '../models/sales_invoice_summary.dart';
 import '../services/sales_invoice_service.dart';
 
 class SalesInvoiceSummaryPage extends StatefulWidget {
-  final int invoiceType;
-  final int filter;
+  final int? invoiceType; // جعلها nullable
+  final int? filter;
   const SalesInvoiceSummaryPage({
     super.key,
-    required this.invoiceType,
-    required this.filter,
+    this.invoiceType = 0,
+    this.filter = 3,
   });
 
   @override
@@ -21,12 +21,13 @@ class SalesInvoiceSummaryPage extends StatefulWidget {
 class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   final DateFormat _df = DateFormat('yyyy-MM-dd');
   final TextEditingController _customerController = TextEditingController();
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
-
+  final Color primaryColor = Color(0xFFB6B09F);
+  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
   DateTime _fromDate = DateTime.now().subtract(Duration(days: 30));
   DateTime _toDate = DateTime.now();
-  int? _isReturnFilter;
+  int? _isReturnFilter = 0;
   int _quickFilter = 3;
 
   final List<SalesInvoiceSummary> _invoices = [];
@@ -39,16 +40,15 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   void initState() {
     super.initState();
     // تعيين الفلتر الأولي بناءً على invoiceType
-    _isReturnFilter = widget.invoiceType == 1 ? 1 : 0;
-    _quickFilter = widget.filter;
+    if (widget.invoiceType == 0 || widget.invoiceType == 1) {
+      _isReturnFilter = widget.invoiceType == 1 ? 1 : 0;
+    }
+    _quickFilter = widget.filter!;
 
-    _applyQuickFilter(widget.filter);
+    _applyQuickFilter(widget.filter!);
   }
 
   Future<void> _fetchPage({bool reset = false}) async {
-    if (widget.invoiceType == 1) _isReturnFilter == true;
-    if (widget.invoiceType == 0) _isReturnFilter == false;
-
     if (_isLoading) return;
     setState(() => _isLoading = true);
 
@@ -58,7 +58,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
         fromDate: _df.format(_fromDate),
         toDate: _df.format(_toDate),
         customer: _customerController.text.trim(),
-        isReturn: widget.invoiceType == 1 ? 1 : 0,
+        isReturn: _isReturnFilter, // <-- use the current filter here
         limitStart: reset ? 0 : _page * _pageSize,
         limitPageLength: _pageSize,
       );
@@ -83,6 +83,9 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   }
 
   void _applyQuickFilter(int index) {
+    print('_applyQuickFilter');
+    print(_quickFilter);
+    print(_isReturnFilter);
     setState(() {
       _quickFilter = index;
       final now = DateTime.now();
@@ -136,9 +139,10 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sales Invoice Summary'),
+        title: const Text('تقرير المبيعات'),
         backgroundColor: primaryColor,
-        foregroundColor: secondaryColor,
+        foregroundColor: Colors.white,
+        centerTitle: true,
       ),
       body: Stack(
         children: [
@@ -149,7 +153,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
                 TextField(
                   controller: _customerController,
                   decoration: InputDecoration(
-                    labelText: 'Search Customer',
+                    labelText: 'البحث باسم العميل',
                     prefixIcon: Icon(Icons.search, color: primaryColor),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -222,7 +226,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
                               inv.customer,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: primaryColor,
+                                color: Colors.black,
                               ),
                             ),
                             subtitle: Text(
@@ -260,7 +264,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
                                         foregroundColor: secondaryColor,
                                       ),
                                       onPressed: () => _fetchPage(),
-                                      child: const Text('Load More'),
+                                      child: const Text('أظهار المزيد'),
                                     ),
                           ),
                         );
@@ -336,7 +340,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
                     },
                   );
 
-                  if (selected != null || _isReturnFilter != selected) {
+                  if (selected != _isReturnFilter) {
                     setState(() => _isReturnFilter = selected);
                     _fetchPage(reset: true);
                   }

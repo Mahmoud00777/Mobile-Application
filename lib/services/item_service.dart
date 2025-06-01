@@ -82,7 +82,7 @@ class ItemService {
 
     final pricesMap = <String, double>{};
     if (includePrices) {
-      futures.add(_fetchPrices(itemNames, posPriceList, pricesMap));
+      futures.add(_fetchPrices(itemNames, posPriceList, pricesMap, itemsData));
     }
 
     final stockMap = <String, double>{};
@@ -124,12 +124,26 @@ class ItemService {
     List<String> itemNames,
     dynamic posPriceList,
     Map<String, double> pricesMap,
+    List<dynamic> itemsData,
   ) async {
     try {
+      // 1. إنشاء خريطة للوحدات المفضلة لكل صنف
+      final preferredUOMs = <String, String>{};
+      final stockUOMs = <String, String>{};
+
+      for (final item in itemsData) {
+        final itemName = item['name'].toString();
+        preferredUOMs[itemName] =
+            item['sales_uom']?.toString() ?? item['stock_uom'].toString();
+        stockUOMs[itemName] = item['stock_uom'].toString();
+      }
+
+      // 2. جلب جميع الأسعار الممكنة دفعة واحدة
       final priceFilters = [
         '["price_list","=","$posPriceList"]',
         '["selling","=",1]',
         '["item_code","in",${json.encode(itemNames)}]',
+        '["uom","in",${json.encode(preferredUOMs.values.toSet().toList() + stockUOMs.values.toSet().toList())}]',
       ];
 
       final pricesRes = await ApiClient.get(
@@ -140,10 +154,45 @@ class ItemService {
 
       if (pricesRes.statusCode == 200) {
         final pricesData = json.decode(pricesRes.body)['data'] as List;
+
+        // 3. تصنيف الأسعار حسب الأفضلية
+        final pricesByItem = <String, List<Map<String, dynamic>>>{};
         for (final price in pricesData) {
-          final rate =
-              double.tryParse(price['price_list_rate']?.toString() ?? '0') ?? 0;
-          pricesMap[price['item_code'].toString()] = rate;
+          final itemCode = price['item_code'].toString();
+          pricesByItem.putIfAbsent(itemCode, () => []).add({
+            'rate':
+                double.tryParse(price['price_list_rate']?.toString() ?? '0') ??
+                0,
+            'uom': price['uom']?.toString(),
+          });
+        }
+
+        // 4. اختيار السعر الأمثل لكل صنف
+        for (final itemName in itemNames) {
+          final preferredUOM = preferredUOMs[itemName];
+          final stockUOM = stockUOMs[itemName];
+
+          if (pricesByItem.containsKey(itemName)) {
+            // البحث عن سعر لـ sales_uom أولاً
+            final preferredPrice = pricesByItem[itemName]!.firstWhere(
+              (price) => price['uom'] == preferredUOM,
+              orElse: () => {'rate': 0.0, 'uom': null},
+            );
+
+            if (preferredPrice['rate'] > 0) {
+              pricesMap[itemName] = preferredPrice['rate'];
+            } else {
+              // إذا لم يوجد سعر لـ sales_uom، نبحث عن سعر لـ stock_uom
+              final stockPrice = pricesByItem[itemName]!.firstWhere(
+                (price) => price['uom'] == stockUOM,
+                orElse: () => {'rate': 0.0, 'uom': null},
+              );
+
+              if (stockPrice['rate'] > 0) {
+                pricesMap[itemName] = stockPrice['rate'];
+              }
+            }
+          }
         }
       }
     } catch (e) {

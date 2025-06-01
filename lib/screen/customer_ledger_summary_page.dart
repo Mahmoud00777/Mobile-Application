@@ -11,8 +11,10 @@ class CustomerLedgerPage extends StatefulWidget {
 }
 
 class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
+  final Color primaryColor = Color(0xFFB6B09F);
+  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
 
   late DateTime _fromDate;
   late DateTime _toDate;
@@ -65,9 +67,9 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
       ),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Customer Ledger Summary'),
+          title: const Text('تقرير المستحقات'),
           backgroundColor: primaryColor,
-          foregroundColor: secondaryColor,
+          foregroundColor: Colors.white,
           centerTitle: true,
         ),
         body: Padding(
@@ -78,7 +80,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  labelText: 'Search Customer',
+                  labelText: 'بحث باسم العميل',
                   filled: true,
                   fillColor: secondaryColor,
                   prefixIcon: Icon(Icons.search, color: primaryColor),

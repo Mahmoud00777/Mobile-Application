@@ -8,6 +8,13 @@ void main() {
   runApp(const MyApp());
 }
 
+class AppColors {
+  static const black = Color.fromARGB(255, 85, 84, 84);
+  static const darkBeige = Color(0xFFB6B09F);
+  static const lightBeige = Color(0xFFEAE4D5);
+  static const veryLightGray = Color(0xFFF2F2F2);
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -16,8 +23,31 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.light(primary: const Color(0xFFBDB395)),
-        fontFamily: 'Cairo', // خط عربي إن رغبت
+        fontFamily: 'Cairo',
+        scaffoldBackgroundColor: AppColors.veryLightGray,
+        primaryColor: AppColors.black,
+        colorScheme: ColorScheme.fromSwatch().copyWith(
+          primary: AppColors.black,
+          secondary: AppColors.darkBeige,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.black,
+            foregroundColor: Colors.white,
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: AppColors.veryLightGray,
+          focusedBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: AppColors.darkBeige),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: AppColors.lightBeige),
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
       ),
       locale: const Locale('ar', ''),
       supportedLocales: const [Locale('ar', '')],
@@ -42,9 +72,6 @@ class _LoginState extends State<Login> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
 
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color backgroundColor = const Color(0xFFF6F0F0);
-
   @override
   void dispose() {
     _emailController.dispose();
@@ -58,7 +85,7 @@ class _LoginState extends State<Login> {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFBDB395), Color(0xFFBDB395)],
+            colors: [AppColors.darkBeige, AppColors.lightBeige],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -66,17 +93,17 @@ class _LoginState extends State<Login> {
         child: Column(
           children: [
             Expanded(
-              flex: 1,
+              flex: -1,
               child: Container(
-                padding: const EdgeInsets.all(50),
+                padding: const EdgeInsets.all(90),
                 child: Image.asset('assets/images/45.png', fit: BoxFit.contain),
               ),
             ),
             Expanded(
-              flex: 2,
+              flex: 1,
               child: Container(
                 decoration: const BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.veryLightGray,
                   borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(40.0),
                     topRight: Radius.circular(40.0),
@@ -98,28 +125,32 @@ class _LoginState extends State<Login> {
                             style: TextStyle(
                               fontSize: 34,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFFBDB395),
+                              color: AppColors.black,
                             ),
-                            textAlign: TextAlign.right,
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
                             controller: _emailController,
                             decoration: InputDecoration(
                               labelText: 'البريد الإلكتروني',
-                              suffixIcon: Icon(
+                              suffixIcon: const Icon(
                                 Icons.email,
-                                color: primaryColor,
+                                color: AppColors.darkBeige,
                               ),
-                              border: OutlineInputBorder(
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(
+                                  color: AppColors.black,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: primaryColor),
+                                borderSide: const BorderSide(
+                                  color: AppColors.black,
+                                  width: 2,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            cursorColor: primaryColor,
                             textAlign: TextAlign.right,
                             textDirection: TextDirection.rtl,
                           ),
@@ -129,39 +160,35 @@ class _LoginState extends State<Login> {
                             obscureText: true,
                             decoration: InputDecoration(
                               labelText: 'كلمة المرور',
-                              suffixIcon: Icon(Icons.lock, color: primaryColor),
-                              border: OutlineInputBorder(
+                              suffixIcon: const Icon(
+                                Icons.lock,
+                                color: AppColors.darkBeige,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: const BorderSide(
+                                  color: AppColors.black,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: primaryColor),
+                                borderSide: const BorderSide(
+                                  color: AppColors.black,
+                                  width: 2,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            cursorColor: primaryColor,
                             textAlign: TextAlign.right,
                             textDirection: TextDirection.rtl,
                           ),
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              // TextButton(
-                              //   onPressed: () {},
-                              //   child: Text(
-                              //     'نسيت كلمة المرور؟',
-                              //     style: TextStyle(color: primaryColor),
-                              //   ),
-                              // ),
-                            ],
-                          ),
+
                           const SizedBox(height: 30),
                           SizedBox(
                             width: double.infinity,
                             height: 50,
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryColor,
+                                backgroundColor: AppColors.black,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
@@ -178,8 +205,6 @@ class _LoginState extends State<Login> {
                                           fontSize: 18,
                                           color: Colors.white,
                                         ),
-                                        textAlign:
-                                            TextAlign.center, // النص أبيض
                                       ),
                             ),
                           ),
@@ -216,7 +241,6 @@ class _LoginState extends State<Login> {
       final success = await AuthService.login(email, password);
 
       if (!mounted) return;
-
       Navigator.of(context).pop();
 
       if (success) {

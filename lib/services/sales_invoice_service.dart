@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/sales_invoice_summary.dart';
 import 'api_client.dart';
 
@@ -13,8 +15,11 @@ class SalesInvoiceService {
     int limitStart = 0,
     int limitPageLength = 20,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final openShiftId = prefs.getString('pos_open');
     final filters = {
       'company': company,
+      'custom_pos_open_shift': openShiftId,
       'posting_date': [
         'between',
         [fromDate, toDate],

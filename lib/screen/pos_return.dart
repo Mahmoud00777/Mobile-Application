@@ -34,10 +34,10 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   List<String> itemGroups = [];
   String? selectedItemGroup;
   TextEditingController searchController = TextEditingController();
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
-  final Color backgroundColor = const Color(0xFFF6F0F0);
-  final Color pressedColor = const Color(0xFFF2E2B1);
+  final Color primaryColor = Color(0xFFB6B09F);
+  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
 
   @override
   void initState() {
@@ -397,47 +397,55 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                         ),
                       ],
                     ),
+                    // if (attachedImages.isNotEmpty)
+                    //   SizedBox(
+                    //     height: 100,
+                    //     child: ListView.builder(
+                    //       scrollDirection: Axis.horizontal,
+                    //       itemCount: attachedImages.length,
+                    //       itemBuilder: (context, index) {
+                    //         return Stack(
+                    //           children: [
+                    //             Container(
+                    //               width: 100,
+                    //               height: 100,
+                    //               margin: EdgeInsets.only(right: 8),
+                    //               decoration: BoxDecoration(
+                    //                 borderRadius: BorderRadius.circular(8),
+                    //                 image: DecorationImage(
+                    //                   image: FileImage(attachedImages[index]),
+                    //                   fit: BoxFit.cover,
+                    //                 ),
+                    //               ),
+                    //             ),
+                    //             Positioned(
+                    //               top: 0,
+                    //               right: 0,
+                    //               child: IconButton(
+                    //                 icon: Icon(
+                    //                   Icons.close,
+                    //                   size: 20,
+                    //                   color: Colors.red,
+                    //                 ),
+                    //                 onPressed: () {
+                    //                   setState(() {
+                    //                     attachedImages.removeAt(index);
+                    //                   });
+                    //                 },
+                    //               ),
+                    //             ),
+                    //           ],
+                    //         );
+                    //       },
+                    //     ),
+                    //   ),
                     if (attachedImages.isNotEmpty)
-                      SizedBox(
+                      Container(
                         height: 100,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: attachedImages.length,
-                          itemBuilder: (context, index) {
-                            return Stack(
-                              children: [
-                                Container(
-                                  width: 100,
-                                  height: 100,
-                                  margin: EdgeInsets.only(right: 8),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    image: DecorationImage(
-                                      image: FileImage(attachedImages[index]),
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 0,
-                                  right: 0,
-                                  child: IconButton(
-                                    icon: Icon(
-                                      Icons.close,
-                                      size: 20,
-                                      color: Colors.red,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        attachedImages.removeAt(index);
-                                      });
-                                    },
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
+                        width: double.infinity, // Or a fixed width for testing
+                        //color: Colors.amber, // Placeholder color
+                        alignment: Alignment.center,
+                        child: Text("Images: ${attachedImages.length}"),
                       ),
                     SizedBox(height: 20),
                     Text(

@@ -26,21 +26,20 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with RouteAware {
-  final Color primaryRed = const Color.fromARGB(255, 156, 20, 20);
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
-  final Color backgroundColor = const Color(0xFFF6F0F0);
-  final Color pressedColor = const Color(0xFFF2E2B1);
-  bool _isClosingShift = false;
+  final Color primaryColor = Color(0xFFB6B09F);
+  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
+
   final List<Map<String, dynamic>> buttons = [
-    {'label': 'POS', 'icon': Icons.point_of_sale},
-    {'label': 'MATERIAL REQUESTS', 'icon': Icons.inventory_2},
-    {'label': 'PAYMENTS & DEBTS', 'icon': Icons.payments},
-    {'label': 'VISIT LOG', 'icon': Icons.assignment_turned_in},
-    {'label': 'RETURNS', 'icon': Icons.assignment_return},
-    {'label': 'REPORTS', 'icon': Icons.analytics},
-    // {'label': 'STORE', 'icon': Icons.store},
+    {'label': 'نقطة البيع', 'icon': Icons.point_of_sale},
+    {'label': 'طلبات المواد', 'icon': Icons.inventory_2},
+    {'label': 'المدفوعات والديون', 'icon': Icons.payments},
+    {'label': 'سجل الزيارة', 'icon': Icons.assignment_turned_in},
+    {'label': 'الإرجاعات', 'icon': Icons.assignment_return},
+    {'label': 'التقارير', 'icon': Icons.analytics},
   ];
+  bool _isClosingShift = false;
   Map<String, int> statistics = {
     'visits': 0,
     'invoices': 0,
@@ -48,10 +47,12 @@ class _HomePageState extends State<HomePage> with RouteAware {
     'items': 0,
     'returns': 0,
   };
+
   bool isLoadingStats = true;
   Map<String, dynamic>? selectedPOSProfile;
   String? time;
   final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
+
   @override
   void initState() {
     super.initState();
@@ -84,7 +85,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
   }
 
   Future<void> _loadStatistics() async {
-    if (!mounted) return; // التحقق أولاً
+    if (!mounted) return;
 
     setState(() => isLoadingStats = true);
 
@@ -93,9 +94,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
         final posOpeningName = selectedPOSProfile!['name'];
         final prefs = await SharedPreferences.getInstance();
         final posOpeningShift = prefs.getString('pos_open');
-        print(
-          '***********************************************$posOpeningShift****$posOpeningName',
-        );
         final results = await Future.wait([
           PosService.getVisitCount(posOpeningName),
           PosService.getInvoiceCount(posOpeningName, posOpeningShift!),
@@ -133,17 +131,19 @@ class _HomePageState extends State<HomePage> with RouteAware {
       setState(() {
         selectedPOSProfile = jsonDecode(jsonString);
       });
-      print('تم تحميل POS Profile: ${selectedPOSProfile!['name']}');
-      print('تم تحميل POS Profile: $time');
     }
   }
 
   Future<void> _closePOSShift() async {
+    setState(() {
+      _isClosingShift = true;
+    });
+
     try {
-      // 1. جلب بيانات الإغلاق أولاً
+      // Your current existing _closePOSShift code here...
+      // For example:
       final closingData = await _getClosingData();
 
-      // 2. عرض حوار التأكيد مع البيانات
       final confirmed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -189,7 +189,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
                 backgroundColor: Colors.green,
               ),
             );
-
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const Login()),
@@ -204,6 +203,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
             ),
           );
         }
+      } else if (confirmed != true) {
+        setState(() {
+          _isClosingShift = false;
+        });
+        return; // <-- Stop the function here
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -309,10 +313,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
                       label: SizedBox(width: 100, child: Text('طريقة الدفع')),
                     ),
                     DataColumn(
-                      label: SizedBox(
-                        width: 100, // عرض ثابت للعمود الثاني
-                        child: Text('المبلغ'),
-                      ),
+                      label: SizedBox(width: 100, child: Text('المبلغ')),
                       numeric: true,
                     ),
                   ],
@@ -325,9 +326,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
                                 width: 100,
                                 child: Text(
                                   payment['method'],
-                                  overflow:
-                                      TextOverflow
-                                          .ellipsis, // تقصير النص الطويل
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ),
@@ -346,66 +345,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
                 ),
               ),
             ),
-
-            // Text(
-            //   'المدفوعات',
-            //   style: TextStyle(
-            //     fontSize: 16,
-            //     fontWeight: FontWeight.bold,
-            //     color: Colors.grey[800],
-            //   ),
-            // ),
-            // Container(
-            //   width: double.infinity,
-            //   padding: const EdgeInsets.symmetric(horizontal: 8),
-            //   child: SingleChildScrollView(
-            //     scrollDirection: Axis.horizontal,
-            //     child: DataTable(
-            //       columnSpacing: 20,
-            //       dataRowHeight: 40,
-            //       headingRowHeight: 40,
-            //       columns: const [
-            //         DataColumn(
-            //           label: SizedBox(width: 100, child: Text('طريقة الدفع')),
-            //         ),
-            //         DataColumn(
-            //           label: SizedBox(
-            //             width: 100, // عرض ثابت للعمود الثاني
-            //             child: Text('المبلغ'),
-            //           ),
-            //           numeric: true,
-            //         ),
-            //       ],
-            //       rows:
-            //           data['entry'].map<DataRow>((payment) {
-            //             return DataRow(
-            //               cells: [
-            //                 DataCell(
-            //                   SizedBox(
-            //                     width: 100,
-            //                     child: Text(
-            //                       payment['mode_of_payment'],
-            //                       overflow:
-            //                           TextOverflow
-            //                               .ellipsis, // تقصير النص الطويل
-            //                     ),
-            //                   ),
-            //                 ),
-            //                 DataCell(
-            //                   SizedBox(
-            //                     width: 100,
-            //                     child: Text(
-            //                       _formatCurrency(payment['paid_amount']),
-            //                       textAlign: TextAlign.start,
-            //                     ),
-            //                   ),
-            //                 ),
-            //               ],
-            //             );
-            //           }).toList(),
-            //     ),
-            //   ),
-            // ),
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(12),
@@ -499,23 +438,23 @@ class _HomePageState extends State<HomePage> with RouteAware {
       throw Exception('لا يوجد وردية مفتوحة');
     }
 
-    // جلب الفواتير
-    final invoices = await PosService.getShiftInvoices(
-      selectedPOSProfile!['name'],
-    );
+    final shiftName = selectedPOSProfile!['name'];
 
-    // جلب طرق الدفع
-    final payments = await PosService.getPaymentMethods();
-
-    final paymentEntry = await PosService.getShiftPaymentEntries(
-      selectedPOSProfile!['name'],
-    );
+    // جلب البيانات المتوازي
+    final results = await Future.wait([
+      PosService.getShiftInvoices(shiftName),
+      PosService.getPaymentMethods(),
+      PosService.getShiftPaymentEntries(shiftName),
+    ], eagerError: true);
 
     return {
-      'invoice_count': invoices.length,
-      'total_sales': invoices.fold(0.0, (sum, inv) => sum + inv['grand_total']),
-      'payments': payments,
-      'entry': paymentEntry,
+      'invoice_count': results[0].length,
+      'total_sales': results[0].fold(
+        0.0,
+        (sum, inv) => sum + inv['grand_total'],
+      ),
+      'payments': results[1],
+      'entry': results[2],
     };
   }
 
@@ -561,7 +500,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
                     hintText: '0.00',
                   ),
                   onChanged: (value) {
-                    // التحقق من صحة الإدخال
                     if (value.isEmpty || double.tryParse(value) == null) {
                       return;
                     }
@@ -591,26 +529,22 @@ class _HomePageState extends State<HomePage> with RouteAware {
       backgroundColor: backgroundColor,
       drawer: AppDrawer(onLogout: _logout),
       appBar: AppBar(
-        title: const Text(
-          'الصفحة الرئيسية',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: Text('الصفحة الرئيسية', style: TextStyle(color: Colors.white)),
         centerTitle: true,
         backgroundColor: primaryColor,
         // leading: IconButton(
-        //   icon: const Icon(Icons.logout, color: Colors.white),
+        //   icon: Icon(Icons.logout, color: blackColor),
         //   onPressed: _logout,
         // ),
         actions: [
-          if (selectedPOSProfile != null)
-            if (selectedPOSProfile != null)
-              IconButton(
-                icon: Icon(Icons.refresh, color: primaryColor),
-                onPressed: _loadStatistics,
-              ),
+          // if (selectedPOSProfile != null)
+          //   IconButton(
+          //     icon: Icon(Icons.refresh, color: blackColor),
+          //     onPressed: _loadStatistics,
+          //   ),
           IconButton(
             icon: CircleAvatar(
-              backgroundColor: secondaryColor,
+              backgroundColor: Color(0xFFF2F2F2),
               child:
                   _isClosingShift
                       ? SizedBox(
@@ -645,14 +579,14 @@ class _HomePageState extends State<HomePage> with RouteAware {
                   padding: const EdgeInsets.only(bottom: 16.0),
                   child: Row(
                     children: [
-                      const Icon(Icons.access_time, size: 16),
+                      Icon(Icons.access_time, size: 16, color: blackColor),
                       const SizedBox(width: 8),
                       Text(
                         formatTime(time!),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: primaryColor,
+                          color: blackColor,
                         ),
                       ),
                     ],
@@ -673,20 +607,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
                       (context, index) => _buildButton(buttons[index], context),
                 ),
               ),
-              // ElevatedButton(
-              //   onPressed: () async {
-              //     await AuthService.logout();
-              //     Navigator.pushReplacement(
-              //       context,
-              //       MaterialPageRoute(builder: (context) => const Login()),
-              //     );
-              //   },
-              //   child: const Text('تسجيل الخروج'),
-              // ),
-              // ElevatedButton(
-              //   onPressed: _closePOSShift,
-              //   child: const Text('إغلاق الوردية'),
-              // ),
             ],
           ),
         ),
@@ -703,7 +623,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
           borderRadius: BorderRadius.circular(15),
           side: BorderSide(color: primaryColor, width: 2),
         ),
-        overlayColor: pressedColor,
+        overlayColor: MaterialStateColor.resolveWith((states) {
+          return states.contains(MaterialState.pressed)
+              ? blackColor.withOpacity(0.1)
+              : Colors.transparent;
+        }),
         elevation: 8,
         shadowColor: Colors.black.withOpacity(0.3),
       ),
@@ -712,25 +636,25 @@ class _HomePageState extends State<HomePage> with RouteAware {
         Widget? targetScreen;
 
         switch (button['label']) {
-          case 'VISIT LOG':
+          case 'سجل الزيارة':
             targetScreen = const VisitScreen();
             break;
-          case 'MATERIAL REQUESTS':
+          case 'طلبات المواد':
             targetScreen = const MaterialRequestScreen();
             break;
-          case 'POS':
+          case 'نقطة البيع':
             targetScreen = const POSScreen();
             break;
-          case 'PAYMENTS & DEBTS':
+          case 'المدفوعات والديون':
             targetScreen = const PaymentEntryListPage();
             break;
-          case 'RETURNS':
+          case 'الإرجاعات':
             targetScreen = const POSReturnScreen();
             break;
           case 'STORE':
             targetScreen = const MaterialStoreScreen();
             break;
-          case 'REPORTS':
+          case 'التقارير':
             targetScreen = const ReportsScreen();
             break;
           default:
@@ -749,13 +673,13 @@ class _HomePageState extends State<HomePage> with RouteAware {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(button['icon'] as IconData, size: 40, color: primaryColor),
+          Icon(button['icon'] as IconData, size: 40, color: blackColor),
           const SizedBox(height: 10),
           Text(
             button['label'] as String,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: primaryColor,
+              color: blackColor,
               fontSize: 14,
               fontWeight: FontWeight.bold,
             ),
@@ -769,8 +693,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
     return Card(
       color: primaryColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      elevation: 8, // زيادة الظل لجعلها ثلاثية الأبعاد
-      shadowColor: Colors.black.withOpacity(0.5), // اللون الأسود للظل
+      elevation: 8,
+      shadowColor: Colors.black.withOpacity(0.5),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
         child: Column(
@@ -781,13 +705,13 @@ class _HomePageState extends State<HomePage> with RouteAware {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.dashboard, size: 36, color: secondaryColor),
+                    Icon(Icons.dashboard, size: 36, color: blackColor),
                     const SizedBox(width: 12),
                     Text(
                       'لوحة الإحصائيات',
                       style: TextStyle(
                         fontFamily: 'Cairo',
-                        color: secondaryColor,
+                        color: blackColor,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -881,18 +805,18 @@ class _HomePageState extends State<HomePage> with RouteAware {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
-          color: Colors.white.withOpacity(0.1),
+          color: blackColor.withOpacity(0.05),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 28, color: secondaryColor),
+            Icon(icon, size: 28, color: blackColor),
             const SizedBox(height: 8),
             Text(
               value,
               style: TextStyle(
                 fontFamily: 'Cairo',
-                color: Colors.white,
+                color: blackColor,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -901,7 +825,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
               label,
               style: TextStyle(
                 fontFamily: 'Cairo',
-                color: secondaryColor.withOpacity(0.8),
+                color: blackColor.withOpacity(0.7),
                 fontSize: 12,
               ),
             ),
@@ -923,9 +847,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
     try {
       final dateTime = DateTime.parse(isoTime);
       return DateFormat('yyyy-MM-dd hh:mm a').format(dateTime);
-      // أو أي تنسيق آخر تفضله (انظر الخيارات بالأسفل)
     } catch (e) {
-      return isoTime; // في حالة خطأ في التحليل، إرجاع القيمة الأصلية
+      return isoTime;
     }
   }
 }

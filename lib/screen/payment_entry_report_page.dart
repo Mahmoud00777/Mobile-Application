@@ -12,8 +12,10 @@ class PaymentEntryReportPage extends StatefulWidget {
 }
 
 class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
+  final Color primaryColor = Color(0xFFB6B09F);
+  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
   final DateFormat _df = DateFormat('yyyy-MM-dd');
 
   String? _posProfile;
@@ -151,9 +153,9 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
       ),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Payment Entry Report'),
+          title: const Text('تقرير المدفوعات'),
           backgroundColor: primaryColor,
-          foregroundColor: secondaryColor,
+          foregroundColor: Colors.white,
         ),
         body: Column(
           children: [
@@ -275,7 +277,7 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
                                           foregroundColor: primaryColor,
                                           side: BorderSide(color: primaryColor),
                                         ),
-                                        child: const Text('Load more'),
+                                        child: const Text('أظهار المزيد'),
                                       ),
                             ),
                           );
