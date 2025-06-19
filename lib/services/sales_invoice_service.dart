@@ -17,9 +17,11 @@ class SalesInvoiceService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final openShiftId = prefs.getString('pos_open');
+    final posName = prefs.getString('selected_pos_profile');
+    final posProfile = json.decode(posName!);
     final filters = {
       'company': company,
-      'custom_pos_open_shift': openShiftId,
+      'pos_profile': posProfile['name'],
       'posting_date': [
         'between',
         [fromDate, toDate],

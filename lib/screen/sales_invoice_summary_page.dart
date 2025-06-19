@@ -35,10 +35,13 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   bool _hasMore = true;
   int _page = 0;
   final int _pageSize = 20;
+  bool _isDisposed = false;
 
   @override
   void initState() {
     super.initState();
+    _isDisposed = true;
+
     // تعيين الفلتر الأولي بناءً على invoiceType
     if (widget.invoiceType == 0 || widget.invoiceType == 1) {
       _isReturnFilter = widget.invoiceType == 1 ? 1 : 0;
@@ -46,6 +49,13 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
     _quickFilter = widget.filter!;
 
     _applyQuickFilter(widget.filter!);
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = false;
+    _customerController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchPage({bool reset = false}) async {
@@ -62,6 +72,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
         limitStart: reset ? 0 : _page * _pageSize,
         limitPageLength: _pageSize,
       );
+      if (!_isDisposed) return;
 
       setState(() {
         if (reset) {
@@ -78,6 +89,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
+      if (!_isDisposed) return;
       setState(() => _isLoading = false);
     }
   }

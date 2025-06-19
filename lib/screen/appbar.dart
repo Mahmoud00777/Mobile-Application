@@ -1,6 +1,5 @@
 import 'package:drsaf/services/auth_service.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class AppDrawer extends StatelessWidget {
   final VoidCallback onLogout;
@@ -9,7 +8,7 @@ class AppDrawer extends StatelessWidget {
   final Color backgroundColor = const Color(0xFFF2F2F2);
   final Color blackColor = const Color.fromARGB(255, 85, 84, 84);
 
-  const AppDrawer({Key? key, required this.onLogout}) : super(key: key);
+  const AppDrawer({super.key, required this.onLogout});
 
   @override
   Widget build(BuildContext context) {
@@ -143,7 +142,7 @@ class AppDrawer extends StatelessWidget {
 class AboutPage extends StatelessWidget {
   final Color primaryColor;
 
-  const AboutPage({Key? key, required this.primaryColor}) : super(key: key);
+  const AboutPage({super.key, required this.primaryColor});
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +166,7 @@ class AboutPage extends StatelessWidget {
 class HelpPage extends StatelessWidget {
   final Color primaryColor;
 
-  const HelpPage({Key? key, required this.primaryColor}) : super(key: key);
+  const HelpPage({super.key, required this.primaryColor});
 
   @override
   Widget build(BuildContext context) {

@@ -134,7 +134,7 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
                     },
                   ),
                 );
-              }).toList(),
+              }),
             ],
           ),
         );

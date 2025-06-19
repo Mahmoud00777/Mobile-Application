@@ -165,8 +165,6 @@ class PosService {
     required String user,
   }) async {
     try {
-      final now = DateTime.now();
-
       for (final customer in customers) {
         print('_createVisitsForCustomers - customer: $customers');
 
@@ -175,7 +173,6 @@ class PosService {
           'customer': customer['name'],
           'pos_profile': posProfile,
           'pos_opening_shift': posOpeningShift,
-          'date_time': now.toIso8601String(),
           'visit': false,
           'note': 'زيارة مخططة لفتح وردية البيع',
           'owner': user,
@@ -287,9 +284,9 @@ class PosService {
             return {
               'mode_of_payment': mop,
               'closing_amount': mop == 'نقد' ? cashAmount : 0.0,
-              'opening_amount': mop == 'نقد' ? cashAmount : 0.0,
+              'opening_amount': 0.0,
               'expected_amount': mop == 'نقد' ? cashAmount : 0.0,
-              'difference': mop == 'نقد' ? cashAmount : 0.0,
+              'difference': 0.0,
             };
           }).toList();
 
@@ -303,6 +300,12 @@ class PosService {
               'customer': invoice['customer'],
             };
           }).toList();
+      final totalQty = invoices.fold(
+        0.0, // القيمة الابتدائية (يمكن أن تكون `0` إذا كانت الكمية عددًا صحيحًا)
+        (sum, invoice) => sum + (invoice['total_qty'] as num).toDouble(),
+      );
+
+      print('إجمالي الكمية في جميع الفواتير: $totalQty');
       print('════════ فواتير الوردية ════════');
       print('عدد الفواتير: ${invoiceTransactions.length}');
       print('──────────────────────────────');
@@ -322,6 +325,7 @@ class PosService {
       // 6. إنشاء بيانات إغلاق الوردية
       final posClosingData = {
         'pos_profile': posProfile['name'],
+        'docstatus': 1,
         'user': user,
         'closing_amount': cashAmount,
         'closing_entry_time': now,
@@ -329,10 +333,15 @@ class PosService {
         'payment_reconciliation': balanceDetails,
         'pos_opening_entry': posOpeningName,
         'custom_sales_invoce_transactions': invoiceTransactions,
-        'total_sales': invoices.fold(
+        'grand_total': invoices.fold(
           0.0,
           (sum, invoice) => sum + (invoice['grand_total'] as num).toDouble(),
         ),
+        'net_total': invoices.fold(
+          0.0,
+          (sum, invoice) => sum + (invoice['grand_total'] as num).toDouble(),
+        ),
+        'total_quantity': totalQty,
       };
 
       // 7. إرسال طلب إنشاء إغلاق الوردية
@@ -392,7 +401,7 @@ class PosService {
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
         '["status","in",["Paid","Partly Paid"]]'
-        ']&fields=["name","posting_date","grand_total","customer","status"]',
+        ']&fields=["name","posting_date","grand_total","customer","status","total_qty"]',
       );
 
       if (response.statusCode == 200) {
@@ -574,7 +583,7 @@ class PosService {
         '["pos_profile","=","$posOpeningName"],'
         '["creation","like","$todayStr%"],'
         '["select_state","!=","لم تتم زيارة"]'
-        ']&fields=["name","status"]',
+        ']&fields=["name","select_state"]',
       );
       print('getVisitCount: ${response.statusCode} - ${response.body}');
 

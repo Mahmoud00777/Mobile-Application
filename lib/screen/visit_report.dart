@@ -27,13 +27,21 @@ class _VisitReportPageState extends State<VisitReportPage> {
   bool _isLoading = true;
 
   final TextEditingController _searchController = TextEditingController();
-
+  bool _isDisposed = false;
   @override
   void initState() {
     super.initState();
     _quickFilter = widget.filter;
     _applyQuickFilter(_quickFilter);
     _searchController.addListener(_applySearch);
+    _isDisposed = true;
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = false;
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _applyQuickFilter(int index) {
@@ -94,6 +102,7 @@ class _VisitReportPageState extends State<VisitReportPage> {
         from: _fromDate,
         to: _toDate,
       );
+      if (!_isDisposed) return;
       setState(() {
         _allVisits = data;
         _applySearch();
@@ -165,12 +174,6 @@ class _VisitReportPageState extends State<VisitReportPage> {
         );
       },
     );
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   @override

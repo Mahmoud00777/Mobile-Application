@@ -298,8 +298,11 @@ class _POSScreenState extends State<POSScreen> {
           backgroundColor: Colors.green,
         ),
       );
+      final updatedProducts = await ItemService.getItems();
 
       setState(() {
+        products = updatedProducts;
+        filteredProducts = updatedProducts;
         cartItems.clear();
         total = 0.0;
         selectedCustomer = null;
@@ -666,7 +669,6 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   //---------------------------------------------//
-
   Widget _buildCartSection() {
     return Card(
       margin: EdgeInsets.all(12),

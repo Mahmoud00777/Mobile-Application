@@ -1,4 +1,5 @@
 import 'package:drsaf/screen/MaterialRequestScreenList.dart';
+import 'package:drsaf/screen/PosOpeningPage.dart';
 import 'package:drsaf/screen/appbar.dart';
 import 'package:drsaf/screen/login.dart';
 import 'package:drsaf/screen/payment_entry_list_page.dart';
@@ -191,7 +192,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
             );
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const Login()),
+              MaterialPageRoute(builder: (context) => const PosOpeningPage()),
             );
           }
         } catch (e) {
@@ -623,8 +624,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
           borderRadius: BorderRadius.circular(15),
           side: BorderSide(color: primaryColor, width: 2),
         ),
-        overlayColor: MaterialStateColor.resolveWith((states) {
-          return states.contains(MaterialState.pressed)
+        overlayColor: WidgetStateColor.resolveWith((states) {
+          return states.contains(WidgetState.pressed)
               ? blackColor.withOpacity(0.1)
               : Colors.transparent;
         }),
