@@ -51,4 +51,15 @@ class PaymentEntryReportService {
         .map((e) => PaymentEntryReport.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  static Future<PaymentEntryReport> getOPaymentEntryByName(String name) async {
+    final res = await ApiClient.get('/api/resource/Payment Entry/$name');
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return PaymentEntryReport.fromJson(data['data']);
+    } else {
+      throw Exception('فشل في جلب تفاصيل الطلب');
+    }
+  }
 }

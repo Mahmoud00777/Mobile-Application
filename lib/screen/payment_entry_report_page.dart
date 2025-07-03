@@ -1,4 +1,5 @@
 import 'package:drsaf/models/payment_entry_report';
+import 'package:drsaf/screen/payment_details.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -235,31 +236,44 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
                         itemBuilder: (ctx, i) {
                           if (i < filteredEntries.length) {
                             final e = filteredEntries[i];
-                            return Card(
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              elevation: 2,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: ListTile(
-                                title: Text(
-                                  e.party,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: primaryColor,
+                            return InkWell(
+                              onTap: () {
+                                print("/*/*/*/*/*/*/*/*//*/*/*");
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (context) =>
+                                            PaymentDetails(payment: e.name),
                                   ),
+                                );
+                              },
+                              child: Card(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
                                 ),
-                                subtitle: Text(
-                                  '${e.postingDate} – ${e.modeOfPayment}',
+                                elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                trailing: Text(
-                                  '${e.paidAmount.toStringAsFixed(2)} LYD',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                                child: ListTile(
+                                  title: Text(
+                                    e.party,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: primaryColor,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    '${e.postingDate} – ${e.modeOfPayment}',
+                                  ),
+                                  trailing: Text(
+                                    '${e.paidAmount.toStringAsFixed(2)} LYD',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
                                   ),
                                 ),
                               ),

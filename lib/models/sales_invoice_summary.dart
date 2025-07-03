@@ -5,6 +5,7 @@ class SalesInvoiceSummary {
   final double grandTotal;
   final String customPosOpenShift;
   final int isReturn;
+  final List<SalesInvoiceItem> items;
 
   SalesInvoiceSummary({
     required this.invoiceNumber,
@@ -13,6 +14,7 @@ class SalesInvoiceSummary {
     required this.grandTotal,
     required this.customPosOpenShift,
     required this.isReturn,
+    required this.items,
   });
 
   factory SalesInvoiceSummary.fromJsonMap(Map<String, dynamic> json) {
@@ -23,6 +25,46 @@ class SalesInvoiceSummary {
       grandTotal: (json['grand_total'] as num?)?.toDouble() ?? 0.0,
       customPosOpenShift: json['custom_pos_open_shift'] as String? ?? '',
       isReturn: (json['is_return'] as num?)?.toInt() ?? 0,
+      items:
+          (json['items'] as List<dynamic>?)
+              ?.map((item) => SalesInvoiceItem.fromJson(item))
+              .toList() ??
+          [],
     );
+  }
+}
+
+class SalesInvoiceItem {
+  final String itemCode;
+  final String itemName;
+  final int qty;
+  final String uom;
+  final double rate;
+
+  SalesInvoiceItem({
+    required this.itemCode,
+    required this.itemName,
+    required this.qty,
+    required this.uom,
+    required this.rate,
+  });
+
+  factory SalesInvoiceItem.fromJson(Map<String, dynamic> json) {
+    return SalesInvoiceItem(
+      itemCode: json['item_code'] ?? '',
+      itemName: json['item_name'] ?? '',
+      qty: (json['qty'] ?? 0).toInt(),
+      uom: json['uom'] ?? '',
+      rate: (json['rate'] ?? 0.0),
+    );
+  }
+  Map<String, dynamic> toJson() {
+    return {
+      'item_code': itemCode,
+      'qty': qty,
+      'item_name': itemName,
+      'uom': uom,
+      'rate': rate,
+    };
   }
 }

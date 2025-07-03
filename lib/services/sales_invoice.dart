@@ -112,20 +112,22 @@ class SalesInvoice {
         final responseData = json.decode(response.body);
         final invoiceName = responseData['data']['name'];
 
-        // 1. تقديم الفاتورة إذا كان الدفع كاملاً
-        await submitSalesInvoice(invoiceName);
+        final result = await submitSalesInvoice(invoiceName);
         print('shiftId => shiftId: $openShiftId');
-        // 2. تحديث حالة الزيارة إلى "فاتورة بيع"
         final visitUpdateResponse = await updateVisitStatus(
           customerName: customer.name,
           shiftId: openShiftId,
           newStatus: 'فاتورة',
           invoiceNumber: invoiceName,
         );
-
+        final fullInvoice = await getSalesInvoiceByName(invoiceName);
+        final customerOutstanding = await getCustomerOutstanding(customer.name);
         return {
           'success': true,
+          'result': result,
           'invoice_name': invoiceName,
+          'full_invoice': fullInvoice,
+          'customer_outstanding': customerOutstanding,
           'message':
               outstandingAmount > 0
                   ? 'تم إنشاء الفاتورة كمسودة مع وجود رصيد مستحق'
@@ -265,10 +267,8 @@ class SalesInvoice {
           await ApiClient.postJson('/api/resource/File', File);
         }
 
-        // 1. تقديم الفاتورة إذا كان الدفع كاملاً
-        await submitSalesInvoice(invoiceName);
+        final result = await submitSalesInvoice(invoiceName);
         print('shiftId => shiftId: $openShiftId');
-        // 2. تحديث حالة الزيارة إلى "فاتورة بيع"
         final visitUpdateResponse = await updateVisitStatus(
           customerName: customer.name,
           shiftId: openShiftId,
@@ -278,6 +278,7 @@ class SalesInvoice {
 
         return {
           'success': true,
+          'result': result,
           'invoice_name': invoiceName,
           'message':
               outstandingAmount > 0
@@ -397,6 +398,59 @@ class SalesInvoice {
         'success': false,
         'error': 'حدث خطأ أثناء إرسال الفاتورة: ${e.toString()}',
       };
+    }
+  }
+
+  static Future<Map<String, dynamic>> getSalesInvoiceByName(String name) async {
+    final res = await ApiClient.get('/api/resource/Sales Invoice/$name');
+
+    if (res.statusCode == 200) {
+      return json.decode(res.body)['data'];
+    } else {
+      throw Exception('فشل في جلب بيانات الفاتورة');
+    }
+  }
+
+  static Future<double> getCustomerOutstanding(String customerName) async {
+    try {
+      final filters = {
+        'customer': customerName,
+        'docstatus': '1',
+        'outstanding_amount': ['>', 0],
+      };
+      final query =
+          Uri(
+            queryParameters: {
+              'fields': json.encode(['name', 'outstanding_amount']),
+              'filters': json.encode(filters),
+            },
+          ).query;
+      final response = await ApiClient.get(
+        '/api/resource/Sales Invoice?$query',
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('فشل في جلب فواتير الزبون');
+      }
+
+      final data = json.decode(response.body)['data'];
+      print('getCustomerOutstanding*-*-*--*-*-*-*-*-*-*-*--*-*$data');
+
+      // 2. جمع جميع القيم المتبقية
+      double totalOutstanding = 0.0;
+      for (final invoice in data) {
+        final amount = invoice['outstanding_amount'] ?? 0.0;
+        if (amount is num) {
+          totalOutstanding += amount.toDouble();
+        } else if (amount is String) {
+          totalOutstanding += double.tryParse(amount) ?? 0.0;
+        }
+      }
+
+      return totalOutstanding;
+    } catch (e) {
+      print('خطأ في حساب الرصيد المستحق: $e');
+      return 0.0;
     }
   }
 }

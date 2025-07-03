@@ -616,6 +616,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
   }
 
   Widget _buildButton(Map<String, dynamic> button, BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         backgroundColor: secondaryColor,
@@ -691,7 +692,9 @@ class _HomePageState extends State<HomePage> with RouteAware {
   }
 
   Widget _buildDashboardCard() {
+    final screenWidth = MediaQuery.of(context).size.width;
     return Card(
+      margin: EdgeInsets.all(screenWidth * 0.01),
       color: primaryColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       elevation: 8,

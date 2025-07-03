@@ -272,7 +272,11 @@ class PosService {
 
       // 3. جلب فواتير الوردية الحالية
       final invoices = await _getShiftInvoices(posOpeningName);
+      final payment = await _getShiftPayment(posOpeningName);
+      final visits = await _getShiftVisit(posOpeningName);
       print('عدد الفواتير في الوردية: ${invoices.length}');
+      print('عدد مدفوعات في الوردية: ${payment.length}');
+      print('عدد زيارات في الوردية: ${visits.length}');
 
       // 4. إعداد بيانات الإغلاق
       final now = DateTime.now().toIso8601String();
@@ -300,6 +304,15 @@ class PosService {
               'customer': invoice['customer'],
             };
           }).toList();
+      final paymentsTransactions =
+          payment.map((pay) {
+            return {'payment': pay['name'], 'customer': pay['party_name']};
+          }).toList();
+
+      final visitTransactions =
+          visits.map((visit) {
+            return {'visit': visit['name'], 'customer': visit['customer']};
+          }).toList();
       final totalQty = invoices.fold(
         0.0, // القيمة الابتدائية (يمكن أن تكون `0` إذا كانت الكمية عددًا صحيحًا)
         (sum, invoice) => sum + (invoice['total_qty'] as num).toDouble(),
@@ -325,7 +338,6 @@ class PosService {
       // 6. إنشاء بيانات إغلاق الوردية
       final posClosingData = {
         'pos_profile': posProfile['name'],
-        'docstatus': 1,
         'user': user,
         'closing_amount': cashAmount,
         'closing_entry_time': now,
@@ -333,6 +345,8 @@ class PosService {
         'payment_reconciliation': balanceDetails,
         'pos_opening_entry': posOpeningName,
         'custom_sales_invoce_transactions': invoiceTransactions,
+        'custom_payment_transactions': paymentsTransactions,
+        'custom_visit_transactions': visitTransactions,
         'grand_total': invoices.fold(
           0.0,
           (sum, invoice) => sum + (invoice['grand_total'] as num).toDouble(),
@@ -342,6 +356,7 @@ class PosService {
           (sum, invoice) => sum + (invoice['grand_total'] as num).toDouble(),
         ),
         'total_quantity': totalQty,
+        'docstatus': 1,
       };
 
       // 7. إرسال طلب إنشاء إغلاق الوردية
@@ -361,10 +376,10 @@ class PosService {
       await _updateInvoicesWithClosingEntry(invoices, closingEntryName);
 
       // 9. تحديث حالة الوردية المفتوحة كمغلقة
-      await ApiClient.putJson(
-        '/api/resource/POS Opening Entry/$posOpeningName',
-        {'status': 'Closed'},
-      );
+      // await ApiClient.putJson(
+      //   '/api/resource/POS Opening Entry/$posOpeningName',
+      //   {'status': 'Closed'},
+      // );
 
       // 10. حذف الوردية المفتوحة من SharedPreferences
       await prefs.remove('pos_open');
@@ -411,6 +426,48 @@ class PosService {
       return [];
     } catch (e) {
       print('Error fetching shift invoices: $e');
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> _getShiftPayment(
+    String posOpeningName,
+  ) async {
+    try {
+      final response = await ApiClient.get(
+        '/api/resource/Payment Entry?filters=['
+        '["custom_pos_opening_shift","=","$posOpeningName"]'
+        ']&fields=["name","party_name"]',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return List<Map<String, dynamic>>.from(data['data'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching shift payments: $e');
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> _getShiftVisit(
+    String posOpeningName,
+  ) async {
+    try {
+      final response = await ApiClient.get(
+        '/api/resource/Visit?filters=['
+        '["pos_opening_shift","=","$posOpeningName"]'
+        ']&fields=["name","customer"]',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return List<Map<String, dynamic>>.from(data['data'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching shift payments: $e');
       return [];
     }
   }

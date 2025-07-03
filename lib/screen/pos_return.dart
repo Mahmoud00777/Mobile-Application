@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:drsaf/Class/message_service.dart';
 import 'package:drsaf/services/api_client.dart';
 import 'package:drsaf/services/visit_service.dart';
 import 'package:flutter/material.dart';
@@ -271,10 +272,31 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       );
 
       if (!invoiceResult['success']) {
-        throw Exception(invoiceResult['error']);
+        final errorMessage = invoiceResult['success'] ?? 'حدث خطأ غير معروف';
+        MessageService.showError(
+          context,
+          errorMessage,
+          title: 'فشل في إنشاء الفاتورة ترجيع',
+        );
+        throw Exception(errorMessage);
+      }
+
+      if (!invoiceResult['result']['success']) {
+        final errorMessage =
+            invoiceResult['result']['error'] ?? 'حدث خطأ غير معروف';
+        MessageService.showError(
+          context,
+          errorMessage,
+          title: 'فشل في تأكيد الفاتورة ترجيع بعد انشائها ',
+        );
+        throw Exception(errorMessage);
       }
 
       Navigator.pop(context);
+      MessageService.showSuccess(
+        context,
+        'تم حفظ الفاتورة ترجيع بنجاح ${invoiceResult['full_invoice']['name']}',
+      );
 
       setState(() {
         cartItems.clear();
@@ -282,9 +304,9 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       });
     } catch (e) {
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل في إتمام البيع: ${e.toString()}')),
-      );
+      // ScaffoldMessenger.of(context).showSnackBar(
+      //   SnackBar(content: Text('فشل في إتمام البيع: ${e.toString()}')),
+      // );
     }
   }
 

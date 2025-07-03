@@ -2,14 +2,22 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:drsaf/Class/message_service.dart';
 import 'package:drsaf/services/api_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sunmi_printer_plus/core/enums/enums.dart';
+import 'package:sunmi_printer_plus/core/styles/sunmi_text_style.dart';
+import 'package:sunmi_printer_plus/core/sunmi/sunmi_printer.dart';
+import 'package:sunmi_printer_plus/core/types/sunmi_column.dart';
 import '../services/sales_invoice.dart';
 import '../services/item_service.dart';
 import '../services/customer_service.dart';
 import '../models/item.dart';
 import '../models/customer.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class POSScreen extends StatefulWidget {
   const POSScreen({super.key});
@@ -277,27 +285,49 @@ class _POSScreenState extends State<POSScreen> {
       final invoiceResult = await SalesInvoice.createSalesInvoice(
         customer: selectedCustomer!,
         items: cartItems,
-        total: totalAfterDiscount, // استخدام الإجمالي بعد الخصم
+        total: totalAfterDiscount,
         paymentMethod: paymentData,
         paidAmount: paidAmount,
         outstandingAmount: outstanding,
         discountAmount: discountAmount,
         discountPercentage: discountPercentage,
       );
-
+      print('**********************${invoiceResult['full_invoice']['name']}');
+      print('**********************${invoiceResult['customer_outstanding']}');
+      print('**********************${invoiceResult['result']}');
+      printTest(
+        selectedCustomer,
+        cartItems,
+        invoiceResult['full_invoice']['name'],
+        invoiceResult['customer_outstanding'],
+      );
       if (!invoiceResult['success']) {
-        throw Exception(invoiceResult['error']);
+        final errorMessage = invoiceResult['success'] ?? 'حدث خطأ غير معروف';
+        MessageService.showError(
+          context,
+          errorMessage,
+          title: 'فشل في إنشاء الفاتورة',
+        );
+        throw Exception(errorMessage);
       }
 
-      Navigator.pop(context); // إغلاق دائرة التحميل
+      if (!invoiceResult['result']['success']) {
+        final errorMessage =
+            invoiceResult['result']['details'] ?? 'حدث خطأ غير معروف';
+        MessageService.showError(
+          context,
+          errorMessage.toString(),
+          title: 'فشل في تأكيد الفاتورة بعد انشائها ',
+        );
+        throw Exception(errorMessage);
+      }
 
-      // عرض إشعار النجاح
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إتمام البيع بنجاح'),
-          backgroundColor: Colors.green,
-        ),
+      Navigator.pop(context);
+      MessageService.showSuccess(
+        context,
+        'تم حفظ الفاتورة بنجاح ${invoiceResult['full_invoice']['name']}',
       );
+
       final updatedProducts = await ItemService.getItems();
 
       setState(() {
@@ -311,12 +341,12 @@ class _POSScreenState extends State<POSScreen> {
       Navigator.pop(context); // إغلاق دائرة التحميل في حالة الخطأ
       print('خطأ في إتمام البيع: $e\n$stack');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('فشل في إتمام البيع: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // ScaffoldMessenger.of(context).showSnackBar(
+      //   SnackBar(
+      //     content: Text('فشل في إتمام البيع: ${e.toString()}'),
+      //     backgroundColor: Colors.red,
+      //   ),
+      // );
     }
   }
 
@@ -519,6 +549,12 @@ class _POSScreenState extends State<POSScreen> {
                   onPressed: () => Navigator.pop(context),
                   child: const Text('إلغاء'),
                 ),
+                // TextButton(
+                //   onPressed: () {
+
+                //   },
+                //   child: const Text('طباعة'),
+                // ),
                 FilledButton(
                   onPressed: () {
                     if (amountController.text.isEmpty) {
@@ -668,7 +704,6 @@ class _POSScreenState extends State<POSScreen> {
     );
   }
 
-  //---------------------------------------------//
   Widget _buildCartSection() {
     return Card(
       margin: EdgeInsets.all(12),
@@ -956,7 +991,6 @@ class _POSScreenState extends State<POSScreen> {
     );
   }
 
-  //---------------------------------------------------//
   Future<void> _showEditItemDialog(BuildContext context, int index) async {
     final item = cartItems[index];
     var originalPrice = item['original_price'] ?? item['price'];
@@ -1373,9 +1407,7 @@ class _POSScreenState extends State<POSScreen> {
                                               0.6,
                                             ),
                                           ),
-                                          textDirection:
-                                              TextDirection
-                                                  .rtl, // المجموعة من اليمين لليسار
+                                          textDirection: TextDirection.rtl,
                                         ),
                                 onTap: () => Navigator.pop(context, customer),
                               );
@@ -1398,7 +1430,6 @@ class _POSScreenState extends State<POSScreen> {
     }
   }
 
-  //--------------------------------------------------------------//
   void _addNewCustomer() {}
 
   void _showSettings(BuildContext context) {}
@@ -1488,7 +1519,220 @@ class _POSScreenState extends State<POSScreen> {
   }
 }
 
-//------------------------------------------------------//
+void printTest(
+  Customer? selectedCustomer,
+  List<Map<String, dynamic>> cartItems,
+  invoName,
+  outstanding,
+) async {
+  if (!await isSunmiDevice()) {
+    print('🚫 ليس جهاز Sunmi. إلغاء الطباعة.');
+    return;
+  }
+  print(invoName);
+  print(outstanding);
+  final ByteData logoBytes = await rootBundle.load('assets/images/test.png');
+  final Uint8List imageBytes = logoBytes.buffer.asUint8List();
+  final now = DateTime.now();
+  final formattedDate = DateFormat('yyyy-MM-dd – HH:mm').format(now);
+  // ignore: deprecated_member_use
+  await SunmiPrinter.initPrinter();
+  // ignore: deprecated_member_use
+  await SunmiPrinter.startTransactionPrint(true);
+  await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
+
+  await SunmiPrinter.printText(
+    'فاتورة',
+    style: SunmiTextStyle(
+      bold: true,
+      align: SunmiPrintAlign.CENTER,
+      fontSize: 50,
+    ),
+  );
+  await SunmiPrinter.printText(
+    '--------------------------------',
+    style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
+  );
+  await SunmiPrinter.line();
+  await SunmiPrinter.printText(
+    'الزبون: ${selectedCustomer?.customerName ?? "غير معروف"}',
+  );
+  await SunmiPrinter.printText('');
+  await SunmiPrinter.printText('التاريخ والوقت: $formattedDate');
+  await SunmiPrinter.printText('رقم الفاتورة : $invoName');
+
+  await SunmiPrinter.printText('');
+  await SunmiPrinter.lineWrap(3);
+
+  // // طباعة جدول العناصر
+  // await SunmiPrinter.printText(
+  //   'المنتج       الكمية   السعر   الإجمالي',
+  //   style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.CENTER),
+  // );
+  await SunmiPrinter.printRow(
+    cols: [
+      SunmiColumn(
+        text: 'الإجمالي',
+        width: 3,
+        style: SunmiTextStyle(align: SunmiPrintAlign.LEFT, bold: true),
+      ),
+      SunmiColumn(
+        text: 'السعر',
+        width: 2,
+        style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
+      ),
+      SunmiColumn(
+        text: 'الكمية',
+        width: 2,
+        style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
+      ),
+      SunmiColumn(
+        text: 'المنتج',
+        width: 5,
+        style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT, bold: true),
+      ),
+    ],
+  );
+  await SunmiPrinter.printText(
+    '--------------------------------',
+    style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+  );
+  double total = 0.0;
+
+  for (final item in cartItems) {
+    final name = item['item_name'] ?? '';
+    final qty = item['quantity'] ?? 0;
+    final rate = item['price'] ?? 0.0;
+    final amount = (qty * rate);
+
+    total += amount;
+
+    await SunmiPrinter.printRow(
+      cols: [
+        SunmiColumn(
+          text: amount.toStringAsFixed(1),
+          width: 2,
+          style: SunmiTextStyle(align: SunmiPrintAlign.LEFT),
+        ),
+        SunmiColumn(
+          text: rate.toStringAsFixed(1),
+          width: 2,
+          style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+        ),
+        SunmiColumn(
+          text: '×$qty',
+          width: 2,
+          style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+        ),
+        SunmiColumn(
+          text: name,
+          width: 6,
+          style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT),
+        ),
+      ],
+    );
+    await SunmiPrinter.printText(
+      '--------------------------------',
+      style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+    );
+  }
+
+  await SunmiPrinter.printText(
+    'الإجمالي: ${total.toStringAsFixed(1)} LYD',
+    style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.LEFT),
+  );
+  await SunmiPrinter.printText(
+    'ديون: ${outstanding.toStringAsFixed(1)} LYD',
+    style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.LEFT),
+  );
+  await SunmiPrinter.printText(
+    '--------------------------------',
+    style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+  );
+  await SunmiPrinter.printText(
+    'شكرًا لزيارتكم!',
+    style: SunmiTextStyle(bold: true, fontSize: 35),
+  );
+
+  await SunmiPrinter.printText(
+    'نتمنى أن نراكم مجددًا 😊',
+    style: SunmiTextStyle(fontSize: 35),
+  );
+
+  await SunmiPrinter.lineWrap(3);
+  await SunmiPrinter.cutPaper();
+}
+
+Future<bool> isSunmiDevice() async {
+  if (!Platform.isAndroid) return false;
+
+  final deviceInfo = DeviceInfoPlugin();
+  final androidInfo = await deviceInfo.androidInfo;
+
+  final brand = androidInfo.brand.toLowerCase() ?? '';
+  final manufacturer = androidInfo.manufacturer.toLowerCase() ?? '';
+
+  return brand.contains('sunmi') || manufacturer.contains('sunmi');
+}
+
+void showTopMessage(
+  BuildContext context,
+  String message, {
+  bool isError = false,
+}) {
+  final overlay = Overlay.of(context);
+  final overlayEntry = OverlayEntry(
+    builder:
+        (context) => Positioned(
+          top: MediaQuery.of(context).padding.top + 20,
+          left: 20,
+          right: 20,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isError ? Colors.red : Colors.green,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isError ? Icons.error : Icons.check_circle,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                  ),
+                  // IconButton(
+                  //   icon: const Icon(Icons.close, size: 20),
+                  //   color: Colors.white,
+                  //   onPressed: () => overlayEntry.remove(),
+                  // ),
+                ],
+              ),
+            ),
+          ),
+        ),
+  );
+
+  overlay.insert(overlayEntry);
+
+  Future.delayed(const Duration(seconds: 3), () {
+    if (overlayEntry.mounted) overlayEntry.remove();
+  });
+}
 
 class ProductCard extends StatelessWidget {
   final Item product;

@@ -41,6 +41,7 @@ class SalesInvoiceService {
               'grand_total',
               'custom_pos_open_shift',
               'is_return',
+              'items',
             ]),
             'filters': json.encode(filters),
             'order_by': 'posting_date desc',
@@ -70,5 +71,16 @@ class SalesInvoiceService {
     }
 
     throw Exception('فشل في جلب فواتير المبيعات');
+  }
+
+  static Future<SalesInvoiceSummary> getSalesInvoiceByName(String name) async {
+    final res = await ApiClient.get('/api/resource/Sales Invoice/$name');
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return SalesInvoiceSummary.fromJsonMap(data['data']);
+    } else {
+      throw Exception('فشل في جلب تفاصيل الطلب');
+    }
   }
 }

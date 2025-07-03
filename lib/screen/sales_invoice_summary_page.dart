@@ -1,3 +1,4 @@
+import 'package:drsaf/screen/invo_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/sales_invoice_summary.dart';
@@ -226,40 +227,55 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
                     itemBuilder: (ctx, i) {
                       if (i < _invoices.length) {
                         final inv = _invoices[i];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(vertical: 6),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          elevation: 2,
-                          color: secondaryColor,
-                          child: ListTile(
-                            title: Text(
-                              inv.customer,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
+                        return InkWell(
+                          onTap: () {
+                            print("************************");
+                            print(inv.invoiceNumber);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (context) => InvoDetailsScreen(
+                                      invoce: inv.invoiceNumber,
+                                    ),
                               ),
+                            );
+                          },
+                          child: Card(
+                            margin: const EdgeInsets.symmetric(vertical: 6),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            subtitle: Text(
-                              '${_df.format(inv.postingDate)} • ${inv.invoiceNumber}',
-                              style: const TextStyle(color: Colors.black54),
-                            ),
-                            trailing: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '${inv.grandTotal.toStringAsFixed(2)} LYD',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.black,
+                            elevation: 2,
+                            color: secondaryColor,
+                            child: ListTile(
+                              title: Text(
+                                inv.customer,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${_df.format(inv.postingDate)} • ${inv.invoiceNumber}',
+                                style: const TextStyle(color: Colors.black54),
+                              ),
+                              trailing: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '${inv.grandTotal.toStringAsFixed(2)} LYD',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.black,
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  inv.customPosOpenShift,
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ],
+                                  Text(
+                                    inv.customPosOpenShift,
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         );

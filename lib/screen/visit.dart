@@ -351,6 +351,7 @@ class _VisitScreenState extends State<VisitScreen> {
 
   Future<List<Visit>> _getFilteredVisits() async {
     final visits = await _visitsFuture;
+    print(visits);
     return visits.where((visit) {
       if (_filterOption == 'all') return true;
       return visit.select_state == _filterOption;

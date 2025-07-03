@@ -36,6 +36,7 @@ class Visit {
     }
 
     DateTime parseDateTime(dynamic value) {
+      print(value);
       if (value == null || value == '') return DateTime.now();
       try {
         return DateTime.parse(value.toString());
@@ -58,7 +59,7 @@ class Visit {
       customer: json['customer']?.toString() ?? '',
       posProfile: json['pos_profile']?.toString() ?? '',
       posOpeningShift: json['pos_opening_shift']?.toString() ?? '',
-      dateTime: parseDateTime(json['date_time']),
+      dateTime: parseDateTime(json['data_time']),
       customerName: json['customer_name']?.toString(),
       posProfileName: json['pos_profile']?.toString(),
     );
