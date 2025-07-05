@@ -18,10 +18,10 @@ class _VisitScreenState extends State<VisitScreen> {
   late Future<List<Visit>> _visitsFuture;
   String _filterOption = 'all';
   final ScrollController _scrollController = ScrollController();
-  final Color primaryColor = Color(0xFFB6B09F);
-  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color primaryColor = Color(0xFF60B245);
+  final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
-  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
+  final Color blackColor = Color(0xFF383838);
   bool _isMounted = false;
   File? _imageFile;
   Position? _currentPosition;
@@ -456,7 +456,7 @@ class _VisitScreenState extends State<VisitScreen> {
           FloatingActionButton(
             heroTag: 'filterBtn',
             onPressed: () => _showFilterOptions(context),
-            backgroundColor: Color(0xFFB6B09F),
+            backgroundColor: primaryColor,
             child: const Icon(
               Icons.filter_alt,
               color: Color.fromARGB(255, 255, 255, 255),

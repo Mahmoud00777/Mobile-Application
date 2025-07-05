@@ -12,10 +12,10 @@ class VisitReportPage extends StatefulWidget {
 }
 
 class _VisitReportPageState extends State<VisitReportPage> {
-  final Color primaryColor = Color(0xFFB6B09F);
-  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color primaryColor = Color(0xFF60B245);
+  final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
-  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
+  final Color blackColor = Color(0xFF383838);
   final DateFormat _df = DateFormat('yyyy-MM-dd');
 
   DateTime _fromDate = DateTime.now().subtract(const Duration(days: 30));

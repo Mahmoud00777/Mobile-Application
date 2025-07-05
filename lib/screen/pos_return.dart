@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'package:drsaf/Class/message_service.dart';
 import 'package:drsaf/services/api_client.dart';
 import 'package:drsaf/services/visit_service.dart';
+import 'package:drsaf/Class/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,10 +35,10 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   List<String> itemGroups = [];
   String? selectedItemGroup;
   TextEditingController searchController = TextEditingController();
-  final Color primaryColor = Color(0xFFB6B09F);
-  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color primaryColor = Color(0xFF60B245);
+  final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
-  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
+  final Color blackColor = Color(0xFF383838);
 
   @override
   void initState() {
@@ -140,14 +140,15 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     });
   }
 
-  void _increaseQuantity(int index) {
+  void _increaseQuantity(int index, [Function? setModalState]) {
     setState(() {
       cartItems[index]['quantity'] += 1;
       total += cartItems[index]['price'];
     });
+    setModalState?.call(() {});
   }
 
-  void _decreaseQuantity(int index) {
+  void _decreaseQuantity(int index, [Function? setModalState]) {
     setState(() {
       if (cartItems[index]['quantity'] > 1) {
         cartItems[index]['quantity'] -= 1;
@@ -157,6 +158,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         cartItems.removeAt(index);
       }
     });
+    setModalState?.call(() {});
   }
 
   void addToCart(Item product) {
@@ -185,33 +187,39 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     });
   }
 
-  void removeFromCart(int index) {
+  void removeFromCart(int index, [Function? setModalState]) {
     setState(() {
       total -= cartItems[index]['price'] * cartItems[index]['quantity'];
       cartItems.removeAt(index);
     });
+    setModalState?.call(() {});
   }
 
-  void clearCart() {
+  void clearCart([Function? setModalState]) {
     setState(() {
       cartItems.clear();
       total = 0.0;
       selectedCustomer = null;
     });
+    setModalState?.call(() {});
   }
 
   Future<void> _processPayment(BuildContext context) async {
     if (selectedCustomer == null) {
-      ScaffoldMessenger.of(
+      MessageService.showWarning(
         context,
-      ).showSnackBar(SnackBar(content: Text('الرجاء اختيار عميل أولاً')));
+        'الرجاء اختيار عميل أولاً',
+        title: 'فشل في إتمام الإرجاع',
+      );
       return;
     }
 
     if (cartItems.isEmpty) {
-      ScaffoldMessenger.of(
+      MessageService.showWarning(
         context,
-      ).showSnackBar(SnackBar(content: Text('السلة فارغة')));
+        'السلة فارغة',
+        title: 'فشل في إتمام الإرجاع',
+      );
       return;
     }
 
@@ -242,13 +250,16 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         await _completeSale(paymentResult);
       }
     } catch (e) {
-      ScaffoldMessenger.of(
+      MessageService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('حدث خطأ: ${e.toString()}')));
+        'حدث خطأ: ${e.toString()}',
+        title: 'فشل في إتمام الإرجاع',
+      );
     }
   }
 
   Future<void> _completeSale(Map<String, dynamic> paymentData) async {
+    print("////////////////////////");
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -272,11 +283,11 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       );
 
       if (!invoiceResult['success']) {
-        final errorMessage = invoiceResult['success'] ?? 'حدث خطأ غير معروف';
+        final errorMessage = invoiceResult['error'] ?? 'حدث خطأ غير معروف';
         MessageService.showError(
           context,
           errorMessage,
-          title: 'فشل في إنشاء الفاتورة ترجيع',
+          title: 'فشل في إنشاء فاتورة الإرجاع',
         );
         throw Exception(errorMessage);
       }
@@ -287,26 +298,33 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         MessageService.showError(
           context,
           errorMessage,
-          title: 'فشل في تأكيد الفاتورة ترجيع بعد انشائها ',
+          title: 'فشل في تأكيد فاتورة الإرجاع',
         );
         throw Exception(errorMessage);
       }
-
-      Navigator.pop(context);
       MessageService.showSuccess(
         context,
-        'تم حفظ الفاتورة ترجيع بنجاح ${invoiceResult['full_invoice']['name']}',
+        'تم إتمام الإرجاع بنجاح',
+        title: 'تم إتمام الإرجاع بنجاح',
       );
-
+      Navigator.pop(context);
+      final updatedProducts = await ItemService.getItems();
       setState(() {
+        products = updatedProducts;
+        filteredProducts = updatedProducts;
         cartItems.clear();
         total = 0.0;
+        selectedCustomer = null;
       });
     } catch (e) {
       Navigator.pop(context);
-      // ScaffoldMessenger.of(context).showSnackBar(
-      //   SnackBar(content: Text('فشل في إتمام البيع: ${e.toString()}')),
-      // );
+      print('خطأ في إتمام الإرجاع: $e');
+
+      MessageService.showError(
+        context,
+        'فشل في إتمام الإرجاع: ${e.toString()}',
+        title: 'فشل في إتمام الإرجاع',
+      );
     }
   }
 
@@ -419,48 +437,6 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                         ),
                       ],
                     ),
-                    // if (attachedImages.isNotEmpty)
-                    //   SizedBox(
-                    //     height: 100,
-                    //     child: ListView.builder(
-                    //       scrollDirection: Axis.horizontal,
-                    //       itemCount: attachedImages.length,
-                    //       itemBuilder: (context, index) {
-                    //         return Stack(
-                    //           children: [
-                    //             Container(
-                    //               width: 100,
-                    //               height: 100,
-                    //               margin: EdgeInsets.only(right: 8),
-                    //               decoration: BoxDecoration(
-                    //                 borderRadius: BorderRadius.circular(8),
-                    //                 image: DecorationImage(
-                    //                   image: FileImage(attachedImages[index]),
-                    //                   fit: BoxFit.cover,
-                    //                 ),
-                    //               ),
-                    //             ),
-                    //             Positioned(
-                    //               top: 0,
-                    //               right: 0,
-                    //               child: IconButton(
-                    //                 icon: Icon(
-                    //                   Icons.close,
-                    //                   size: 20,
-                    //                   color: Colors.red,
-                    //                 ),
-                    //                 onPressed: () {
-                    //                   setState(() {
-                    //                     attachedImages.removeAt(index);
-                    //                   });
-                    //                 },
-                    //               ),
-                    //             ),
-                    //           ],
-                    //         );
-                    //       },
-                    //     ),
-                    //   ),
                     if (attachedImages.isNotEmpty)
                       Container(
                         height: 100,
@@ -493,14 +469,18 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                 FilledButton(
                   onPressed: () async {
                     if (amountController.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('الرجاء إدخال المبلغ')),
+                      MessageService.showWarning(
+                        context,
+                        'الرجاء إدخال المبلغ',
+                        title: 'فشل في إتمام الإرجاع',
                       );
                       return;
                     }
                     if (notesController.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('الرجاء إدخال سبب الإرجاع')),
+                      MessageService.showWarning(
+                        context,
+                        'الرجاء إدخال سبب الإرجاع',
+                        title: 'فشل في إتمام الإرجاع',
                       );
                       return;
                     }
@@ -662,7 +642,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
 
   //---------------------------------------------//
 
-  Widget _buildCartSection() {
+  Widget _buildCartSection([Function? setModalState]) {
     return Card(
       margin: EdgeInsets.all(12),
       shape: RoundedRectangleBorder(
@@ -735,7 +715,12 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                       itemBuilder: (context, index) {
                         final item = cartItems[index];
                         return InkWell(
-                          onTap: () => _showEditItemDialog(context, index),
+                          onTap:
+                              () => _showEditItemDialog(
+                                context,
+                                index,
+                                setModalState,
+                              ),
                           child: Container(
                             margin: EdgeInsets.symmetric(
                               horizontal: 12,
@@ -803,7 +788,11 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                                       elevation: 1,
                                       child: InkWell(
                                         borderRadius: BorderRadius.circular(20),
-                                        onTap: () => removeFromCart(index),
+                                        onTap:
+                                            () => removeFromCart(
+                                              index,
+                                              setModalState,
+                                            ),
                                         child: Padding(
                                           padding: EdgeInsets.all(6),
                                           child: Icon(
@@ -829,7 +818,10 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                                               6,
                                             ),
                                             onTap:
-                                                () => _decreaseQuantity(index),
+                                                () => _decreaseQuantity(
+                                                  index,
+                                                  setModalState,
+                                                ),
                                             child: Container(
                                               width: 30,
                                               height: 24,
@@ -855,7 +847,10 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                                               6,
                                             ),
                                             onTap:
-                                                () => _increaseQuantity(index),
+                                                () => _increaseQuantity(
+                                                  index,
+                                                  setModalState,
+                                                ),
                                             child: Container(
                                               width: 30,
                                               height: 24,
@@ -894,7 +889,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    onPressed: clearCart,
+                    onPressed: () => clearCart(setModalState),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -950,7 +945,11 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   }
 
   //---------------------------------------------------//
-  Future<void> _showEditItemDialog(BuildContext context, int index) async {
+  Future<void> _showEditItemDialog(
+    BuildContext context,
+    int index, [
+    Function? setModalState,
+  ]) async {
     final item = cartItems[index];
     final TextEditingController quantityController = TextEditingController(
       text: item['quantity'].toString(),
@@ -1089,6 +1088,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                         };
                         total = calculateTotal();
                       });
+                      setModalState?.call(() {});
                       Navigator.pop(context);
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -1292,7 +1292,23 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return Center(child: CircularProgressIndicator());
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'نقطة البيع',
+            style: TextStyle(color: Colors.white),
+          ),
+          centerTitle: true,
+          backgroundColor: primaryColor,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.only(
+              bottomRight: Radius.circular(25),
+              bottomLeft: Radius.circular(25),
+            ),
+          ),
+        ),
+        body: _buildLoadingScreen(),
+      );
     }
 
     if (errorMessage.isNotEmpty) {
@@ -1300,6 +1316,35 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     }
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            builder: (context) {
+              final screenHeight = MediaQuery.of(context).size.height;
+              return StatefulBuilder(
+                builder: (context, setModalState) {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom,
+                    ),
+                    child: SizedBox(
+                      height: screenHeight * 0.5,
+                      child: _buildCartSection(setModalState),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
+        backgroundColor: Color(0xFF60B245),
+        child: Icon(Icons.shopping_cart, color: Color(0xffffffff)),
+      ),
       appBar: AppBar(
         title: const Text('مرتجعات', style: TextStyle(color: Colors.white)),
         centerTitle: true,
@@ -1309,6 +1354,9 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
             bottomRight: Radius.circular(25),
             bottomLeft: Radius.circular(25),
           ),
+        ),
+        iconTheme: const IconThemeData(
+          color: Colors.white, // ⬅ هذا يجعل زر الرجوع أبيض
         ),
         actions: [
           Padding(
@@ -1325,19 +1373,12 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                   ),
                 ),
                 SizedBox(width: 6),
-                // أيقونة لتغيير العميل بدلاً من زر النص
                 IconButton(
                   icon: Icon(Icons.person, color: Colors.white, size: 20),
                   tooltip:
                       selectedCustomer == null ? 'اختيار عميل' : 'تغيير العميل',
                   onPressed: _showCustomerDialog,
                 ),
-                // if (selectedCustomer == null)
-                // IconButton(
-                //   icon: Icon(Icons.add, color: Colors.greenAccent),
-                //   onPressed: _addNewCustomer,
-                //   tooltip: 'إضافة عميل جديد',
-                // ),
               ],
             ),
           ),
@@ -1366,8 +1407,315 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
               },
             ),
           ),
-          Expanded(flex: 6, child: _buildCartSection()),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            children: [
+              Container(
+                height: 50,
+                width: 50,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        Expanded(
+          flex: 4,
+          child: GridView.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              childAspectRatio: 0.6,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            padding: EdgeInsets.all(8),
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              return _buildProductSkeleton();
+            },
+          ),
+        ),
+
+        Expanded(flex: 6, child: _buildCartSkeleton()),
+      ],
+    );
+  }
+
+  Widget _buildProductSkeleton() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 3,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.grey[300]!,
+                            Colors.grey[100]!,
+                            Colors.grey[300]!,
+                          ],
+                          stops: [0.0, 0.5, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 6,
+                    right: 6,
+                    bottom: 6,
+                    child: Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[400],
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            height: 12,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[500],
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Container(
+                                height: 10,
+                                width: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[500],
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              Container(
+                                height: 10,
+                                width: 20,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[500],
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCartSkeleton() {
+    return Card(
+      margin: EdgeInsets.all(12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: primaryColor, width: 1.0),
+      ),
+      elevation: 2,
+      child: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  height: 20,
+                  width: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                Container(
+                  height: 20,
+                  width: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Expanded(
+            child: ListView.builder(
+              padding: EdgeInsets.all(8),
+              itemCount: 5,
+              itemBuilder: (context, index) {
+                return _buildCartItemSkeleton();
+              },
+            ),
+          ),
+
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCartItemSkeleton() {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1)),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.grey[300],
+            shape: BoxShape.circle,
+          ),
+        ),
+        title: Container(
+          height: 14,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.grey[300],
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        subtitle: Container(
+          height: 12,
+          width: 120,
+          margin: EdgeInsets.only(top: 4),
+          decoration: BoxDecoration(
+            color: Colors.grey[300],
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        trailing: SizedBox(
+          width: MediaQuery.of(context).size.width * 0.4,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Container(
+                height: 14,
+                width: 60,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              SizedBox(width: 8),
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  shape: BoxShape.circle,
+                ),
+              ),
+              SizedBox(width: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 30,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Container(
+                    width: 30,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

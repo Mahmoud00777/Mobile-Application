@@ -12,10 +12,10 @@ class CustomerOutstandingPage extends StatefulWidget {
 }
 
 class _CustomerOutstandingPageState extends State<CustomerOutstandingPage> {
-  final Color primaryColor = const Color(0xFFB6B09F);
-  final Color secondaryColor = const Color(0xFFEAE4D5);
-  final Color backgroundColor = const Color(0xFFF2F2F2);
-  final Color blackColor = const Color.fromARGB(255, 85, 84, 84);
+  final Color primaryColor = Color(0xFF60B245);
+  final Color secondaryColor = Color(0xFFFFFFFF);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color(0xFF383838);
 
   late Future<List<CustomerOutstanding>> _futureList;
   List<CustomerOutstanding> _all = [];

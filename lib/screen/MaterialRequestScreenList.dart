@@ -16,9 +16,10 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   late Future<List<MaterialRequest>> _requestsFuture;
 
   // Theme colors
-  final Color primaryColor = const Color(0xFFBDB395);
-  final Color secondaryColor = Colors.white;
-  final Color backgroundColor = const Color(0xFFF6F0F0);
+  final Color primaryColor = Color(0xFF60B245);
+  final Color secondaryColor = Color(0xFFFFFFFF);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color(0xFF383838);
   final Color pressedColor = const Color(0xFFF2E2B1);
 
   // Date range filter

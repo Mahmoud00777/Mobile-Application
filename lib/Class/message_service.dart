@@ -6,7 +6,7 @@ class MessageService {
     required String message,
     String? title,
     bool isSuccess = true,
-    int durationSeconds = 4,
+    int durationSeconds = 10,
     bool showCloseButton = true,
   }) {
     late OverlayEntry overlayEntry;
@@ -122,7 +122,7 @@ class MessageService {
 
   static void showError(BuildContext context, String message, {String? title}) {
     showTopMessage(
-      context: context, // إضافة context هنا
+      context: context,
       message: message,
       title: title ?? 'خطأ',
       isSuccess: false,
@@ -135,7 +135,7 @@ class MessageService {
     String? title,
   }) {
     showTopMessage(
-      context: context, // إضافة context هنا
+      context: context,
       message: message,
       title: title ?? 'تحذير',
       isSuccess: false,

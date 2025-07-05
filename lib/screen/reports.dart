@@ -6,13 +6,12 @@ import 'package:flutter/material.dart';
 import 'payment_entry_report_page.dart';
 
 class ReportsScreen extends StatelessWidget {
-  // تعريف الألوان المطلوبة
-  final Color primaryColor = const Color(0xFFB6B09F);
-  final Color secondaryColor = const Color(0xFFEAE4D5);
-  final Color backgroundColor = const Color(0xFFF2F2F2);
-  final Color blackColor = const Color.fromARGB(255, 85, 84, 84);
+  final Color primaryColor = Color(0xFF60B245);
+  final Color secondaryColor = Color(0xFFFFFFFF);
+  final Color backgroundColor = Color(0xFFF2F2F2);
+  final Color blackColor = Color(0xFF383838);
 
-  const ReportsScreen({super.key});
+  ReportsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

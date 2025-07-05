@@ -27,10 +27,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with RouteAware {
-  final Color primaryColor = Color(0xFFB6B09F);
-  final Color secondaryColor = Color(0xFFEAE4D5);
+  final Color primaryColor = Color(0xFF60B245);
+  final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
-  final Color blackColor = Color.fromARGB(255, 85, 84, 84);
+  final Color blackColor = Color(0xFF383838);
 
   final List<Map<String, dynamic>> buttons = [
     {'label': 'نقطة البيع', 'icon': Icons.point_of_sale},
@@ -141,8 +141,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
     });
 
     try {
-      // Your current existing _closePOSShift code here...
-      // For example:
       final closingData = await _getClosingData();
 
       final confirmed = await showDialog<bool>(
@@ -174,14 +172,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
         );
 
         try {
-          // الحصول على المبلغ النقدي الحالي
           final cashAmount = await _getCurrentCashAmount();
-
-          // استدعاء createClosingEntry
           await PosService.createClosingEntry(cashAmount, selectedPOSProfile!);
 
           if (mounted) {
-            Navigator.pop(context); // إغلاق dialog التحميل
+            Navigator.pop(context);
             await _executeClosing();
 
             ScaffoldMessenger.of(context).showSnackBar(
@@ -208,7 +203,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
         setState(() {
           _isClosingShift = false;
         });
-        return; // <-- Stop the function here
+        return;
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -441,7 +436,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
 
     final shiftName = selectedPOSProfile!['name'];
 
-    // جلب البيانات المتوازي
     final results = await Future.wait([
       PosService.getShiftInvoices(shiftName),
       PosService.getPaymentMethods(),
@@ -530,19 +524,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
       backgroundColor: backgroundColor,
       drawer: AppDrawer(onLogout: _logout),
       appBar: AppBar(
+        iconTheme: IconThemeData(color: Colors.white),
         title: Text('الصفحة الرئيسية', style: TextStyle(color: Colors.white)),
         centerTitle: true,
         backgroundColor: primaryColor,
-        // leading: IconButton(
-        //   icon: Icon(Icons.logout, color: blackColor),
-        //   onPressed: _logout,
-        // ),
         actions: [
-          // if (selectedPOSProfile != null)
-          //   IconButton(
-          //     icon: Icon(Icons.refresh, color: blackColor),
-          //     onPressed: _loadStatistics,
-          //   ),
           IconButton(
             icon: CircleAvatar(
               backgroundColor: Color(0xFFF2F2F2),
@@ -571,32 +557,36 @@ class _HomePageState extends State<HomePage> with RouteAware {
         ),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              if (selectedPOSProfile != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Row(
-                    children: [
-                      Icon(Icons.access_time, size: 16, color: blackColor),
-                      const SizedBox(width: 8),
-                      Text(
-                        formatTime(time!),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: blackColor,
+        child: SingleChildScrollView(
+          // Added SingleChildScrollView here
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                if (selectedPOSProfile != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Row(
+                      children: [
+                        Icon(Icons.access_time, size: 16, color: blackColor),
+                        const SizedBox(width: 8),
+                        Text(
+                          formatTime(time!),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: blackColor,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              _buildDashboardCard(),
-              Expanded(
-                child: GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
+                _buildDashboardCard(),
+                const SizedBox(height: 16),
+                GridView.builder(
+                  shrinkWrap: true, // Added shrinkWrap
+                  physics:
+                      const NeverScrollableScrollPhysics(), // Disable GridView scroll
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     mainAxisSpacing: 16,
@@ -607,8 +597,9 @@ class _HomePageState extends State<HomePage> with RouteAware {
                   itemBuilder:
                       (context, index) => _buildButton(buttons[index], context),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20), // Added extra space at bottom
+              ],
+            ),
           ),
         ),
       ),
@@ -616,7 +607,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
   }
 
   Widget _buildButton(Map<String, dynamic> button, BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         backgroundColor: secondaryColor,
@@ -657,7 +647,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
             targetScreen = const MaterialStoreScreen();
             break;
           case 'التقارير':
-            targetScreen = const ReportsScreen();
+            targetScreen = ReportsScreen();
             break;
           default:
             print('${button['label']} pressed');
@@ -692,9 +682,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
   }
 
   Widget _buildDashboardCard() {
-    final screenWidth = MediaQuery.of(context).size.width;
     return Card(
-      margin: EdgeInsets.all(screenWidth * 0.01),
       color: primaryColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       elevation: 8,
@@ -732,6 +720,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
                   Icons.shopping_cart,
                   statistics['orders'].toString(),
                   'الطلبات',
+
                   onTap: () => _navigateToOrders(context),
                 ),
                 _buildStatItem(
