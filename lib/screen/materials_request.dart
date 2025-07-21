@@ -1,4 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:drsaf/Class/message_service.dart';
+import 'package:drsaf/services/pos_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/item.dart';
@@ -29,20 +33,64 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   final Color blackColor = Color(0xFF383838);
 
   final List<String> requestReasons = [
-    'Purchase',
-    'Material Transfer',
-    'Material Issue',
-    'Manufacture',
-    'Customer Provided',
+    'الشراء',
+    'تحويل المواد',
+    'صرف المواد',
+    'التصنيع',
+    'مقدّم من العميل',
   ];
-  String selectedReason = 'Material Transfer';
+  String selectedReason = 'تحويل المواد';
 
   List<Map<String, dynamic>> cartItems = [];
+  bool hasInternet = false;
+
+  static const Map<String, String> statusLabels = {
+    'Pending': 'قيد الانتظار',
+    'Draft': 'مسودة',
+    'Transferred': 'تم التحويل',
+    'Cancelled': 'ملغى',
+  };
+  String? selectedStatus;
+  List<MaterialRequest> allRequests = []; // يجب تعبئتها من السيرفر
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _fetchProfileAndInitialize();
+  }
+
+  Future<void> _fetchProfileAndInitialize() async {
+    await _checkInternetAndInitialize();
+    if (hasInternet == true) {
+      try {
+        await PosService.fetchAndUpdatePosProfile();
+        await _loadData();
+      } catch (e) {
+        print('تعذر تحديث POS Profile من السيرفر: $e');
+      }
+    }
+  }
+
+  Future<void> _checkInternetAndInitialize() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      realInternet = await checkRealInternet();
+    }
+    setState(() {
+      hasInternet = realInternet;
+    });
+  }
+
+  Future<bool> checkRealInternet() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _loadData() async {
@@ -150,22 +198,12 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
 
   void _saveMaterialRequest() async {
     if (scheduleDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى تحديد تاريخ الطلب'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      MessageService.showError(context, 'يرجى إختيار تاريخ المطلوب');
       return;
     }
 
     if (selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى إضافة أصناف على الأقل'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      MessageService.showError(context, 'يرجى إضافة أصناف على الأقل');
       return;
     }
     print(selectedItems);
@@ -195,22 +233,13 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
         selectedItems,
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إرسال طلب المواد بنجاح'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      MessageService.showSuccess(context, 'تم إرسال طلب المواد بنجاح');
 
       Navigator.pop(context, true);
+      Navigator.pop(context);
     } catch (e) {
       print(e);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('خطأ أثناء الإرسال: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      MessageService.showError(context, 'خطأ أثناء الإرسال: $e');
     }
   }
 
@@ -236,27 +265,24 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              AbsorbPointer(
-                absorbing: true,
-                child: DropdownButtonFormField<String>(
-                  value: selectedReason,
-                  items:
-                      requestReasons.map((reason) {
-                        return DropdownMenuItem(
-                          value: reason,
-                          child: Text(reason),
-                        );
-                      }).toList(),
-                  onChanged: (value) {},
-                  decoration: InputDecoration(
-                    labelText: 'سبب الطلب',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[100],
-                    prefixIcon: const Icon(Icons.receipt),
+              DropdownButtonFormField<String>(
+                value: selectedReason,
+                items:
+                    requestReasons.map((reason) {
+                      return DropdownMenuItem(
+                        value: reason,
+                        child: Text(reason),
+                      );
+                    }).toList(),
+                onChanged: null, // غير نشط بوضوح
+                decoration: InputDecoration(
+                  labelText: 'سبب الطلب',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  prefixIcon: const Icon(Icons.receipt),
                 ),
               ),
               const SizedBox(height: 16),
@@ -567,6 +593,49 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('طلب مواد جديد'),
+          backgroundColor: primaryColor,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: () {
+                  _fetchProfileAndInitialize();
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (isLoading) {
       return Scaffold(
         appBar: AppBar(
@@ -578,7 +647,6 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
         body: _buildLoadingScreen(),
       );
     }
-
     if (errorMessage.isNotEmpty) {
       return Scaffold(
         appBar: AppBar(
@@ -616,11 +684,40 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
     }
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) {
+              return DraggableScrollableSheet(
+                expand: false,
+                maxChildSize: 0.9,
+                minChildSize: 0.4,
+                builder: (context, scrollController) {
+                  return _buildSelectedItemsSheet(context, scrollController);
+                },
+              );
+            },
+          );
+        },
+        backgroundColor: Color(0xFF60B245),
+        child: Icon(Icons.shopping_cart, color: Color(0xffffffff)),
+      ),
+
       appBar: AppBar(
         title: const Text('طلب مواد جديد'),
         centerTitle: true,
+
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(
+            bottomRight: Radius.circular(25),
+            bottomLeft: Radius.circular(25),
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.article_outlined),
@@ -656,14 +753,6 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
       body: Stack(
         children: [
           Column(children: [_buildAvailableItemsSection()]),
-          DraggableScrollableSheet(
-            initialChildSize: 0.35,
-            minChildSize: 0.3,
-            maxChildSize: 0.7,
-            builder: (context, scrollController) {
-              return _buildSelectedItemsSheet(context, scrollController);
-            },
-          ),
         ],
       ),
     );
@@ -680,7 +769,6 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
     final TextEditingController quantityController = TextEditingController(
       text: itemData['quantity'].toString(),
     );
-
     Set<String> availableUnits = {item['uom'] ?? 'وحدة'};
     if (itemData['additionalUOMs'] != null) {
       availableUnits.addAll(
@@ -898,7 +986,6 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
             ),
           ),
         ),
-
         Container(
           height: MediaQuery.of(context).size.height * 0.35,
           decoration: BoxDecoration(

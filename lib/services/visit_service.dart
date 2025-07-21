@@ -63,12 +63,25 @@ class VisitService {
     }
   }
 
-  static Future<void> updateVisit(Visit visit) async {
+  static Future<void> updateVisit(Visit visit, {File? newImageFile}) async {
     print('Update visit => visit: ${visit.name}');
+
+    String? newImageUrl;
+    if (newImageFile != null) {
+      try {
+        newImageUrl = await uploadImage(newImageFile);
+        print('Image uploaded successfully: $newImageUrl');
+      } catch (e) {
+        throw Exception('فشل في رفع الصورة: $e');
+      }
+    }
+
+    final updatedVisit =
+        newImageUrl != null ? visit.copyWith(image: newImageUrl) : visit;
 
     final res = await ApiClient.putJson(
       '/api/resource/Visit/${visit.name}',
-      visit.toJson(),
+      updatedVisit.toJson(),
     );
 
     print('Update visit => status: ${res.statusCode}, body: ${res.body}');
@@ -99,15 +112,14 @@ class VisitService {
       throw Exception('POS profile not found');
     }
     final posProfileName = json.decode(posProfileJson)['name'];
-
-    // Build filters
+    print("from: $from");
+    print("to: $to");
     final filters = <List<dynamic>>[
       ['pos_profile', '=', posProfileName],
-      if (from != null)
-        ['data_time', '>=', from.toIso8601String().split('T').first],
-      if (to != null)
-        ['data_time', '<=', to.toIso8601String().split('T').first],
+      if (from != null) ['data_time', '>=', from.toIso8601String()],
+      if (to != null) ['data_time', '<=', to.toIso8601String()],
     ];
+    print("Filters$filters");
     final query =
         Uri(
           queryParameters: {

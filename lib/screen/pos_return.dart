@@ -8,11 +8,20 @@ import 'package:drsaf/Class/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/sales_invoice.dart';
 import '../services/item_service.dart';
 import '../services/customer_service.dart';
 import '../models/item.dart';
 import '../models/customer.dart';
+import '../services/pos_service.dart';
+import 'package:flutter/services.dart';
+import 'package:sunmi_printer_plus/core/enums/enums.dart';
+import 'package:sunmi_printer_plus/core/styles/sunmi_text_style.dart';
+import 'package:sunmi_printer_plus/core/sunmi/sunmi_printer.dart';
+import 'package:sunmi_printer_plus/core/types/sunmi_column.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 class POSReturnScreen extends StatefulWidget {
   const POSReturnScreen({super.key});
@@ -39,12 +48,25 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
   final Color blackColor = Color(0xFF383838);
+  bool? hasInternet; // null = لم يتم الفحص بعد
 
   @override
   void initState() {
     super.initState();
-    _initializeData();
+    _fetchProfileAndInitialize();
     searchController.addListener(_filterProducts);
+  }
+
+  Future<void> _fetchProfileAndInitialize() async {
+    await _checkInternetAndInitialize();
+    if (hasInternet == true) {
+      try {
+        await PosService.fetchAndUpdatePosProfile();
+      } catch (e) {
+        print('تعذر تحديث POS Profile من السيرفر: $e');
+      }
+    }
+    // يمكنك هنا إعادة تحميل البيانات إذا لزم الأمر بعد التحديث
   }
 
   @override
@@ -302,11 +324,20 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         );
         throw Exception(errorMessage);
       }
+
+      printTest(
+        selectedCustomer,
+        cartItems,
+        invoiceResult['full_invoice']['name'],
+        total,
+      );
+
       MessageService.showSuccess(
         context,
         'تم إتمام الإرجاع بنجاح',
         title: 'تم إتمام الإرجاع بنجاح',
       );
+      Navigator.pop(context);
       Navigator.pop(context);
       final updatedProducts = await ItemService.getItems();
       setState(() {
@@ -1289,8 +1320,212 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
 
   void _showSettings(BuildContext context) {}
 
+  Future<void> _checkInternetAndInitialize() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      realInternet = await checkRealInternet();
+    }
+    setState(() {
+      hasInternet = realInternet;
+    });
+    if (hasInternet == true) {
+      _initializeData();
+    }
+  }
+
+  Future<bool> checkRealInternet() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void printTest(
+    Customer? selectedCustomer,
+    List<Map<String, dynamic>> cartItems,
+    String returnName,
+    double total,
+  ) async {
+    if (!await isSunmiDevice()) {
+      print('🚫 ليس جهاز Sunmi. إلغاء الطباعة.');
+      return;
+    }
+    final ByteData logoBytes = await rootBundle.load('assets/images/test.png');
+    final Uint8List imageBytes = logoBytes.buffer.asUint8List();
+    final now = DateTime.now();
+    final formattedDate = DateFormat('yyyy-MM-dd – HH:mm').format(now);
+    await SunmiPrinter.initPrinter();
+    await SunmiPrinter.startTransactionPrint(true);
+    await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
+    await SunmiPrinter.printText(
+      'فاتورة إرجاع',
+      style: SunmiTextStyle(
+        bold: true,
+        align: SunmiPrintAlign.CENTER,
+        fontSize: 50,
+      ),
+    );
+    await SunmiPrinter.printText(
+      '--------------------------------',
+      style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
+    );
+    await SunmiPrinter.line();
+    await SunmiPrinter.printText(
+      'العميل: ${selectedCustomer?.customerName ?? "غير معروف"}',
+    );
+    await SunmiPrinter.printText('التاريخ والوقت: $formattedDate');
+    await SunmiPrinter.printText('رقم الإرجاع: $returnName');
+    await SunmiPrinter.printText('');
+    await SunmiPrinter.lineWrap(2);
+    await SunmiPrinter.printRow(
+      cols: [
+        SunmiColumn(
+          text: 'الإجمالي',
+          width: 3,
+          style: SunmiTextStyle(align: SunmiPrintAlign.LEFT, bold: true),
+        ),
+        SunmiColumn(
+          text: 'السعر',
+          width: 2,
+          style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
+        ),
+        SunmiColumn(
+          text: 'الكمية',
+          width: 2,
+          style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
+        ),
+        SunmiColumn(
+          text: 'المنتج',
+          width: 5,
+          style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT, bold: true),
+        ),
+      ],
+    );
+    await SunmiPrinter.printText(
+      '--------------------------------',
+      style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+    );
+    double totalAmount = 0.0;
+    for (final item in cartItems) {
+      final name = item['item_name'] ?? '';
+      final qty = item['quantity'] ?? 0;
+      final rate = item['price'] ?? 0.0;
+      final amount = (qty * rate);
+      totalAmount += amount;
+      await SunmiPrinter.printRow(
+        cols: [
+          SunmiColumn(
+            text: amount.toStringAsFixed(1),
+            width: 2,
+            style: SunmiTextStyle(align: SunmiPrintAlign.LEFT),
+          ),
+          SunmiColumn(
+            text: rate.toStringAsFixed(1),
+            width: 2,
+            style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+          ),
+          SunmiColumn(
+            text: '×$qty',
+            width: 2,
+            style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+          ),
+          SunmiColumn(
+            text: name,
+            width: 6,
+            style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT),
+          ),
+        ],
+      );
+      await SunmiPrinter.printText(
+        '--------------------------------',
+        style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+      );
+    }
+    await SunmiPrinter.printText(
+      'الإجمالي: ${totalAmount.toStringAsFixed(1)} LYD',
+      style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.LEFT),
+    );
+    await SunmiPrinter.printText(
+      '--------------------------------',
+      style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+    );
+    await SunmiPrinter.printText(
+      'شكرًا لكم!',
+      style: SunmiTextStyle(bold: true, fontSize: 35),
+    );
+    await SunmiPrinter.printText(
+      'نتمنى لكم يوماً سعيداً 😊',
+      style: SunmiTextStyle(fontSize: 30),
+    );
+    await SunmiPrinter.lineWrap(3);
+    await SunmiPrinter.cutPaper();
+  }
+
+  Future<bool> isSunmiDevice() async {
+    if (!Platform.isAndroid) return false;
+    final deviceInfo = DeviceInfoPlugin();
+    final androidInfo = await deviceInfo.androidInfo;
+    final brand = androidInfo.brand.toLowerCase() ?? '';
+    final manufacturer = androidInfo.manufacturer.toLowerCase() ?? '';
+    return brand.contains('sunmi') || manufacturer.contains('sunmi');
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (hasInternet == null) {
+      // لم يتم فحص الإنترنت بعد
+      return Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('مرتجعات'),
+          backgroundColor: primaryColor,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: () {
+                  _checkInternetAndInitialize();
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (isLoading) {
       return Scaffold(
         appBar: AppBar(

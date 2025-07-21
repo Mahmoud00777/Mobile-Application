@@ -1,11 +1,12 @@
 import 'dart:io';
-import 'package:drsaf/screen/login.dart';
+import 'package:drsaf/Class/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import '../models/visit.dart';
 import '../services/visit_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class VisitScreen extends StatefulWidget {
   const VisitScreen({super.key});
@@ -28,11 +29,13 @@ class _VisitScreenState extends State<VisitScreen> {
   final TextEditingController _noteController = TextEditingController();
   final bool _isVisitCompleted = false;
   bool _isLoadingLocation = false;
+  bool? hasInternet;
 
   @override
   void initState() {
     super.initState();
     _isMounted = true;
+    _checkInternet();
     _refreshVisits();
     _getCurrentLocation();
   }
@@ -48,6 +51,25 @@ class _VisitScreenState extends State<VisitScreen> {
 
     setState(() {
       _visitsFuture = VisitService.getVisits();
+    });
+  }
+
+  Future<void> _checkInternet() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      try {
+        final result = await InternetAddress.lookup('google.com');
+        realInternet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        realInternet = false;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      hasInternet = realInternet;
     });
   }
 
@@ -360,6 +382,55 @@ class _VisitScreenState extends State<VisitScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('سجل الزيارات'),
+          backgroundColor: primaryColor,
+          centerTitle: true,
+          foregroundColor: Colors.white,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.only(
+              bottomRight: Radius.circular(25),
+              bottomLeft: Radius.circular(25),
+            ),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: _checkInternet,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('سجل الزيارات'),
@@ -677,13 +748,13 @@ class _VisitScreenState extends State<VisitScreen> {
   }
 
   void _showVisitDetailsBottomSheet(BuildContext context, Visit visit) {
-    // ننقل متغيرات التعديل هنا
     final TextEditingController noteController = TextEditingController(
       text: visit.note,
     );
     String selectedState = visit.select_state;
     bool isModified = false;
     bool isCheckingLocation = false;
+    File? newImageFile; // متغير للصورة الجديدة
     print('_showVisitDetailsBottomSheet => visit: ${visit.name}');
 
     showModalBottomSheet(
@@ -703,7 +774,6 @@ class _VisitScreenState extends State<VisitScreen> {
               ),
               child: Column(
                 children: [
-                  // Header مع زر الإغلاق فقط
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
@@ -730,6 +800,315 @@ class _VisitScreenState extends State<VisitScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Text(
+                            'صورة الزيارة',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: primaryColor,
+                            ),
+                          ),
+                          SizedBox(height: 8),
+
+                          GestureDetector(
+                            onTap: () {
+                              // معاينة الصورة بشكل أكبر
+                              if (newImageFile != null ||
+                                  visit.image.isNotEmpty) {
+                                showDialog(
+                                  context: context,
+                                  builder:
+                                      (context) => Dialog(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            AppBar(
+                                              title: Text('معاينة الصورة'),
+                                              backgroundColor: primaryColor,
+                                              foregroundColor: Colors.white,
+                                              actions: [
+                                                IconButton(
+                                                  icon: Icon(Icons.close),
+                                                  onPressed:
+                                                      () => Navigator.pop(
+                                                        context,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                            Flexible(
+                                              child: Container(
+                                                constraints: BoxConstraints(
+                                                  maxHeight:
+                                                      MediaQuery.of(
+                                                        context,
+                                                      ).size.height *
+                                                      0.6,
+                                                ),
+                                                child:
+                                                    newImageFile != null
+                                                        ? Image.file(
+                                                          newImageFile!,
+                                                          fit: BoxFit.contain,
+                                                        )
+                                                        : visit.image.isNotEmpty
+                                                        ? Image.network(
+                                                          visit.image
+                                                                  .startsWith(
+                                                                    'http',
+                                                                  )
+                                                              ? visit.image
+                                                              : 'https://demo2.ababeel.ly${visit.image}',
+                                                          fit: BoxFit.contain,
+                                                          errorBuilder: (
+                                                            context,
+                                                            error,
+                                                            stackTrace,
+                                                          ) {
+                                                            return Center(
+                                                              child: Column(
+                                                                mainAxisAlignment:
+                                                                    MainAxisAlignment
+                                                                        .center,
+                                                                children: [
+                                                                  Icon(
+                                                                    Icons
+                                                                        .broken_image,
+                                                                    size: 64,
+                                                                    color:
+                                                                        Colors
+                                                                            .grey,
+                                                                  ),
+                                                                  SizedBox(
+                                                                    height: 16,
+                                                                  ),
+                                                                  Text(
+                                                                    'خطأ في تحميل الصورة',
+                                                                    style: TextStyle(
+                                                                      color:
+                                                                          Colors
+                                                                              .grey,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            );
+                                                          },
+                                                        )
+                                                        : Center(
+                                                          child: Column(
+                                                            mainAxisAlignment:
+                                                                MainAxisAlignment
+                                                                    .center,
+                                                            children: [
+                                                              Icon(
+                                                                Icons.image,
+                                                                size: 64,
+                                                                color:
+                                                                    Colors.grey,
+                                                              ),
+                                                              SizedBox(
+                                                                height: 16,
+                                                              ),
+                                                              Text(
+                                                                'لا توجد صورة',
+                                                                style: TextStyle(
+                                                                  color:
+                                                                      Colors
+                                                                          .grey,
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                );
+                              }
+                            },
+                            child: Container(
+                              height: 150,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: primaryColor.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Stack(
+                                children: [
+                                  newImageFile != null
+                                      ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.file(
+                                          newImageFile!,
+                                          fit: BoxFit.fill,
+                                        ),
+                                      )
+                                      : visit.image.isNotEmpty
+                                      ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.network(
+                                          visit.image.startsWith('http')
+                                              ? visit.image
+                                              : 'https://demo2.ababeel.ly${visit.image}',
+                                          fit: BoxFit.fill,
+                                          errorBuilder: (
+                                            context,
+                                            error,
+                                            stackTrace,
+                                          ) {
+                                            return Center(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.broken_image,
+                                                    size: 48,
+                                                    color: Colors.grey,
+                                                  ),
+                                                  SizedBox(height: 8),
+                                                  Text(
+                                                    'خطأ في تحميل الصورة',
+                                                    style: TextStyle(
+                                                      color: Colors.grey,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      )
+                                      : Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        mainAxisSize: MainAxisSize.max,
+
+                                        children: [
+                                          Icon(
+                                            Icons.image,
+                                            size: 48,
+                                            color: Colors.grey,
+                                          ),
+                                          SizedBox(height: 8),
+                                          Text(
+                                            'لا توجد صورة',
+                                            style: TextStyle(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                  // أيقونة التكبير
+                                  if (newImageFile != null ||
+                                      visit.image.isNotEmpty)
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: Container(
+                                        padding: EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.6),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          Icons.zoom_in,
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 8),
+
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: Icon(Icons.photo_library),
+                                  label: Text('من المعرض'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: primaryColor,
+                                    foregroundColor: Colors.white,
+                                    padding: EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  onPressed: () async {
+                                    final picker = ImagePicker();
+                                    final pickedFile = await picker.pickImage(
+                                      source: ImageSource.gallery,
+                                      imageQuality: 80,
+                                    );
+                                    if (pickedFile != null) {
+                                      setModalState(() {
+                                        newImageFile = File(pickedFile.path);
+                                        isModified = true;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: Icon(Icons.camera_alt),
+                                  label: Text('التقاط صورة'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                    padding: EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  onPressed: () async {
+                                    final picker = ImagePicker();
+                                    final pickedFile = await picker.pickImage(
+                                      source: ImageSource.camera,
+                                      imageQuality: 80,
+                                    );
+                                    if (pickedFile != null) {
+                                      setModalState(() {
+                                        newImageFile = File(pickedFile.path);
+                                        isModified = true;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 8),
+
+                          // زر إلغاء الصورة
+                          if (newImageFile != null)
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                icon: Icon(Icons.clear),
+                                label: Text('إلغاء الصورة المختارة'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                  padding: EdgeInsets.symmetric(vertical: 12),
+                                ),
+                                onPressed: () {
+                                  setModalState(() {
+                                    newImageFile = null;
+                                    isModified = true;
+                                  });
+                                },
+                              ),
+                            ),
+                          SizedBox(height: 24),
+
                           // حقل حالة الزيارة (قابل للتعديل)
                           DropdownButtonFormField<String>(
                             value: selectedState,
@@ -738,7 +1117,7 @@ class _VisitScreenState extends State<VisitScreen> {
                               border: OutlineInputBorder(),
                               enabledBorder: OutlineInputBorder(
                                 borderSide: const BorderSide(
-                                  color: AppColors.black,
+                                  color: Colors.black,
                                 ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -774,7 +1153,7 @@ class _VisitScreenState extends State<VisitScreen> {
 
                               enabledBorder: OutlineInputBorder(
                                 borderSide: const BorderSide(
-                                  color: AppColors.black,
+                                  color: Colors.black,
                                 ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -852,17 +1231,37 @@ class _VisitScreenState extends State<VisitScreen> {
                         label: Text('حفظ'),
                         style: ElevatedButton.styleFrom(
                           foregroundColor: Colors.white, //
-                          backgroundColor: Color(0xFFBDB395),
+                          backgroundColor: const Color.fromARGB(
+                            255,
+                            52,
+                            117,
+                            54,
+                          ),
                           minimumSize: Size(double.infinity, 50),
                         ),
                         onPressed: () async {
-                          final updatedVisit = visit.copyWith(
-                            note: noteController.text,
-                            select_state: selectedState,
-                          );
-                          await VisitService.updateVisit(updatedVisit);
-                          Navigator.pop(context);
-                          _refreshVisits();
+                          try {
+                            final updatedVisit = visit.copyWith(
+                              note: noteController.text,
+                              select_state: selectedState,
+                            );
+                            await VisitService.updateVisit(
+                              updatedVisit,
+                              newImageFile: newImageFile,
+                            );
+                            Navigator.pop(context);
+                            _refreshVisits();
+
+                            MessageService.showSuccess(
+                              context,
+                              'تم تحديث الزيارة بنجاح',
+                            );
+                          } catch (e) {
+                            MessageService.showError(
+                              context,
+                              'خطأ في تحديث الزيارة: ${e.toString()}',
+                            );
+                          }
                         },
                       ),
                     ),
@@ -937,28 +1336,16 @@ Future<void> _verifyVisitLocation(
   BuildContext context,
   Visit visit,
   StateSetter setModalState,
-  // أضف المتغيرات كمعاملات للدالة
   Function(String) updateSelectedState,
   Function(bool) updateIsModified,
 ) async {
   try {
-    // double? visitLat =
-    //     visit.latitude != null ? _dmsToDecimal(visit.latitude!) : null;
-    // double? visitLng =
-    //     visit.longitude != null ? _dmsToDecimal(visit.longitude!) : null;
     final double? visitLat = double.tryParse(visit.latitude!);
     final double? visitLng = double.tryParse(visit.longitude!);
     final Position currentPosition = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
     print("-------------------------$currentPosition");
-    // if (visitLat == null || visitLng == null) {
-    //   print("no visit");
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     const SnackBar(content: Text('لا توجد إحداثيات مخزنة لهذه الزيارة')),
-    //   );
-    //   return;
-    // }
     print('visitLat = $visitLat');
     print('visitLng = $visitLng');
     print('currentPosition.latitude = ${currentPosition.latitude}');
@@ -975,7 +1362,6 @@ Future<void> _verifyVisitLocation(
     const double acceptableDistance = 200;
     print('distance = $distance');
     if (distance <= acceptableDistance) {
-      // استخدم الدوال الممررة لتعديل الحالة
       updateSelectedState('تمت زيارة');
       updateIsModified(true);
       showDialog(

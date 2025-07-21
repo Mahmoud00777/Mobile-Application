@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/customer_ledger_summary.dart';
 import '../services/customer_ledger_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:io';
 
 class CustomerLedgerPage extends StatefulWidget {
   const CustomerLedgerPage({super.key});
@@ -18,16 +20,39 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
 
   late DateTime _fromDate;
   late DateTime _toDate;
-  late Future<List<CustomerLedgerSummary>> _future;
+  Future<List<CustomerLedgerSummary>>? _future;
   final TextEditingController _searchController = TextEditingController();
+  bool? hasInternet;
 
   @override
   void initState() {
     super.initState();
-    _toDate = DateTime.now();
-    _fromDate = DateTime(_toDate.year, _toDate.month - 1, _toDate.day);
-    _loadData();
+    _checkInternet();
     _searchController.addListener(() => setState(() {}));
+  }
+
+  Future<void> _checkInternet() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      try {
+        final result = await InternetAddress.lookup('google.com');
+        realInternet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        realInternet = false;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      hasInternet = realInternet;
+    });
+    if (realInternet) {
+      _toDate = DateTime.now();
+      _fromDate = DateTime(_toDate.year, _toDate.month - 1, _toDate.day);
+      _loadData();
+    }
   }
 
   void _loadData() {
@@ -47,6 +72,49 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('تقرير المستحقات'),
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: _checkInternet,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Theme(
       data: Theme.of(context).copyWith(
         primaryColor: primaryColor,
@@ -91,65 +159,80 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
               ),
               const SizedBox(height: 16),
               Expanded(
-                child: FutureBuilder<List<CustomerLedgerSummary>>(
-                  future: _future,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return Center(child: Text('Error: ${snapshot.error}'));
-                    }
-                    final data = snapshot.data ?? [];
-                    final filtered =
-                        data.where((e) {
-                          final term = _searchController.text.toLowerCase();
-                          return e.customerName.toLowerCase().contains(term);
-                        }).toList();
-                    if (filtered.isEmpty) {
-                      return const Center(child: Text('No data available'));
-                    }
-                    return ListView.builder(
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final summary = filtered[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 6,
-                          ),
-                          color: secondaryColor,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          elevation: 3,
-                          child: ListTile(
-                            title: Text(
-                              summary.customerName,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: primaryColor,
-                              ),
-                            ),
-                            trailing: Text(
-                              '${summary.closingBalance.toStringAsFixed(2)} LYD',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            onTap: () {
-                              // action if needed
-                            },
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
+                child:
+                    _future == null
+                        ? const Center(
+                          child: Text('يرجى اختيار فترة أو إعادة المحاولة'),
+                        )
+                        : FutureBuilder<List<CustomerLedgerSummary>>(
+                          future: _future,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+                            if (snapshot.hasError) {
+                              return Center(
+                                child: Text('Error:  [snapshot.error]'),
+                              );
+                            }
+                            final data = snapshot.data ?? [];
+                            final filtered =
+                                data.where((e) {
+                                  final term =
+                                      _searchController.text.toLowerCase();
+                                  return e.customerName.toLowerCase().contains(
+                                    term,
+                                  );
+                                }).toList();
+                            if (filtered.isEmpty) {
+                              return const Center(
+                                child: Text('No data available'),
+                              );
+                            }
+                            return ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (context, index) {
+                                final summary = filtered[index];
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 6,
+                                  ),
+                                  color: secondaryColor,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  elevation: 3,
+                                  child: ListTile(
+                                    title: Text(
+                                      summary.customerName,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: primaryColor,
+                                      ),
+                                    ),
+                                    trailing: Text(
+                                      '${summary.closingBalance.toStringAsFixed(2)} LYD',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    onTap: () {
+                                      // action if needed
+                                    },
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
               ),
             ],
           ),

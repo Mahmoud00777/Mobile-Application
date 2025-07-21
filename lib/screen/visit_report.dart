@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/visit.dart';
 import '../services/visit_service.dart';
 import 'package:intl/intl.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:io';
 
 class VisitReportPage extends StatefulWidget {
   final int filter;
@@ -25,16 +27,39 @@ class _VisitReportPageState extends State<VisitReportPage> {
   List<Visit> _allVisits = [];
   List<Visit> _filteredVisits = [];
   bool _isLoading = true;
+  bool? hasInternet;
 
   final TextEditingController _searchController = TextEditingController();
   bool _isDisposed = false;
   @override
   void initState() {
     super.initState();
+    _checkInternet();
     _quickFilter = widget.filter;
-    _applyQuickFilter(_quickFilter);
     _searchController.addListener(_applySearch);
     _isDisposed = true;
+  }
+
+  Future<void> _checkInternet() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      try {
+        final result = await InternetAddress.lookup('google.com');
+        realInternet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        realInternet = false;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      hasInternet = realInternet;
+    });
+    if (realInternet) {
+      _applyQuickFilter(_quickFilter);
+    }
   }
 
   @override
@@ -98,10 +123,13 @@ class _VisitReportPageState extends State<VisitReportPage> {
   Future<void> _loadReport() async {
     setState(() => _isLoading = true);
     try {
+      print(_fromDate);
+      print(_toDate);
       final data = await VisitService.fetchVisitsByProfileDate(
         from: _fromDate,
         to: _toDate,
       );
+      print(data);
       if (!_isDisposed) return;
       setState(() {
         _allVisits = data;
@@ -178,6 +206,49 @@ class _VisitReportPageState extends State<VisitReportPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('تقرير الزيارات'),
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: _checkInternet,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Theme(
       data: Theme.of(context).copyWith(
         primaryColor: primaryColor,

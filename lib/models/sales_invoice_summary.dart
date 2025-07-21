@@ -6,6 +6,7 @@ class SalesInvoiceSummary {
   final String customPosOpenShift;
   final int isReturn;
   final List<SalesInvoiceItem> items;
+  final DateTime creation;
 
   SalesInvoiceSummary({
     required this.invoiceNumber,
@@ -15,6 +16,7 @@ class SalesInvoiceSummary {
     required this.customPosOpenShift,
     required this.isReturn,
     required this.items,
+    required this.creation,
   });
 
   factory SalesInvoiceSummary.fromJsonMap(Map<String, dynamic> json) {
@@ -30,6 +32,9 @@ class SalesInvoiceSummary {
               ?.map((item) => SalesInvoiceItem.fromJson(item))
               .toList() ??
           [],
+      creation: DateTime.parse(
+        json['creation'] as String? ?? DateTime.now().toIso8601String(),
+      ),
     );
   }
 }

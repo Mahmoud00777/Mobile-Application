@@ -1,3 +1,4 @@
+import 'package:drsaf/Class/message_service.dart';
 import 'package:drsaf/services/payment_service_list.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -234,7 +235,15 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
   }
 
   Future<void> _submit() async {
-    if (_selectedCustomer == null || _selectedMethod == null) return;
+    if (_selectedCustomer == null) {
+      MessageService.showWarning(context, 'يرجى تحديد العميل');
+      return;
+    }
+    if (_selectedMethod == null) {
+      MessageService.showWarning(context, 'يرجى تحديد طريقة الدفع');
+      return;
+    }
+
     final text = _paidAmountCtrl.text;
     if (text.isEmpty || double.tryParse(text) == null) return;
 
@@ -264,11 +273,10 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
 
     try {
       await PaymentEntryService.createPayment(entry);
+      MessageService.showSuccess(context, 'تم إنشاء الدفعة بنجاح');
       Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('خطأ في الحفظ: \$e')));
+      MessageService.showError(context, 'خطأ في الحفظ: \$e');
     }
   }
 

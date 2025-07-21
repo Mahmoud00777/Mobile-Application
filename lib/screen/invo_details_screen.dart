@@ -21,6 +21,11 @@ class InvoDetailsScreen extends StatefulWidget {
 }
 
 class _InvoiceDetailScreenState extends State<InvoDetailsScreen> {
+  final Color primaryColor = const Color(0xFF60B245);
+  final Color secondaryColor = Colors.white;
+  final Color backgroundColor = const Color(0xFFF2F2F2);
+  final Color pressedColor = const Color(0xFFFFFFFF);
+  final Color textColor = const Color(0xFF383838);
   SalesInvoiceSummary? invoiceDetails;
   bool isLoading = true;
   String? errorMessage;
@@ -51,7 +56,44 @@ class _InvoiceDetailScreenState extends State<InvoDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(appBar: AppBar(title: Text("data")), body: _buildBody());
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'تفاصيل فاتورة مبيعات',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: primaryColor,
+        centerTitle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(
+            bottomRight: Radius.circular(25),
+            bottomLeft: Radius.circular(25),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: _buildBody(),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 16, right: 8),
+        child: FloatingActionButton.extended(
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          elevation: 6,
+          icon: const Icon(Icons.print_outlined, size: 28),
+          label: const Text(
+            'طباعة الفاتورة',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          onPressed:
+              invoiceDetails == null ? null : () => printTest(invoiceDetails!),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
   }
 
   Widget _buildBody() {
@@ -81,29 +123,43 @@ class _InvoiceDetailScreenState extends State<InvoDetailsScreen> {
 
   Widget _buildInvoiceDetails() {
     final details = invoiceDetails;
+    final Color primaryColor = const Color(0xFF60B245);
+    final Color secondaryColor = Colors.white;
+    final Color backgroundColor = const Color(0xFFF2F2F2);
+    final Color textColor = const Color(0xFF383838);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // معلومات الفاتورة الأساسية
+          // Header Card
           Card(
             elevation: 3,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            color: secondaryColor,
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDetailRow('العميل:', details?.customer ?? 'غير محدد'),
-                  _buildDetailRow(
-                    'رقم الفاتورة:',
-                    details?.invoiceNumber ?? 'غير محدد',
+                  Text(
+                    'فاتورة رقم ${details?.invoiceNumber ?? 'غير محدد'}',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: primaryColor,
+                    ),
                   ),
+                  const SizedBox(height: 8),
+                  Divider(color: primaryColor.withOpacity(0.3)),
+                  const SizedBox(height: 8),
+                  _buildDetailRow('العميل:', details?.customer ?? 'غير محدد'),
                   _buildDetailRow('التاريخ:', _df.format(details!.postingDate)),
                   _buildDetailRow(
                     'المجموع:',
-                    '${details.grandTotal.toStringAsFixed(2) ?? '0.00'} ل.د',
+                    '${details.grandTotal.toStringAsFixed(2)} ل.د',
                   ),
                   _buildDetailRow(
                     'الوردية:',
@@ -114,28 +170,79 @@ class _InvoiceDetailScreenState extends State<InvoDetailsScreen> {
             ),
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
 
-          // بنود الفاتورة
-          const Text(
+          // Items Section
+          Text(
             'بنود الفاتورة',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const Divider(),
-
-          if (details.items.isNotEmpty)
-            ...details.items.map<Widget>((item) => _buildInvoiceItem(item))
-          else
-            const Center(child: Text('لا توجد بنود')),
-          Center(
-            child: FloatingActionButton(
-              onPressed: () {
-                print("*******************");
-                printTest(details);
-              },
-              child: const Icon(Icons.print_outlined),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: textColor,
             ),
           ),
+          const SizedBox(height: 12),
+          ...details.items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                elevation: 2,
+                borderRadius: BorderRadius.circular(12),
+                color: secondaryColor,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {},
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              item.itemName ?? 'بند بدون اسم',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: primaryColor,
+                              ),
+                            ),
+                            Text(
+                              item.itemCode ?? '',
+                              style: TextStyle(color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.scale, size: 18, color: primaryColor),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${item.qty.toStringAsFixed(2)} ${item.uom}',
+                              style: TextStyle(fontSize: 15, color: textColor),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'السعر: ${item.rate.toStringAsFixed(2)} ل.د',
+                          style: TextStyle(fontSize: 14, color: textColor),
+                        ),
+                        Text(
+                          'المجموع: ${(item.qty * item.rate).toStringAsFixed(2)} ل.د',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (details.items.isEmpty) const Center(child: Text('لا توجد بنود')),
+          const SizedBox(height: 24),
         ],
       ),
     );

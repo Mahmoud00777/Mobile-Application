@@ -17,6 +17,11 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
   String? selectedPOSProfileName;
   bool _isLoading = true;
 
+  final Color primaryColor = const Color(0xFF60B245);
+  final Color secondaryColor = Colors.white;
+  final Color backgroundColor = const Color(0xFFF2F2F2);
+  final Color textColor = const Color(0xFF383838);
+
   @override
   void initState() {
     super.initState();
@@ -98,10 +103,26 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: const Text('فتح نقطة البيع'),
+        title: const Text(
+          'فتح نقطة البيع',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+          ),
+        ),
         centerTitle: true,
         elevation: 0,
+        backgroundColor: primaryColor,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(
+            bottomRight: Radius.circular(25),
+            bottomLeft: Radius.circular(25),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body:
           _isLoading
@@ -112,11 +133,24 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const SizedBox(height: 20),
-                    const Text(
+                    Center(
+                      child: CircleAvatar(
+                        radius: 36,
+                        backgroundColor: primaryColor.withOpacity(0.1),
+                        child: Icon(
+                          Icons.point_of_sale,
+                          size: 40,
+                          color: primaryColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
                       'اختر نقطة البيع لبدء الوردية',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
+                        color: textColor,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -126,16 +160,18 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      color: secondaryColor,
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'نقطة البيع المتاحة',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
+                                color: primaryColor,
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -172,23 +208,36 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
                       ),
                     ),
                     const SizedBox(height: 40),
-                    ElevatedButton(
-                      onPressed: _isLoading ? null : _submitOpening,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: ElevatedButton.icon(
+                        onPressed: _isLoading ? null : _submitOpening,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 4,
+                          textStyle: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
+                        icon: const Icon(Icons.play_arrow, size: 28),
+                        label:
+                            _isLoading
+                                ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : const Text('بدء الوردية'),
                       ),
-                      child:
-                          _isLoading
-                              ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
-                              : const Text(
-                                'بدء الوردية',
-                                style: TextStyle(fontSize: 18),
-                              ),
                     ),
                   ],
                 ),

@@ -18,6 +18,8 @@ import '../services/item_service.dart';
 import '../services/customer_service.dart';
 import '../models/item.dart';
 import '../models/customer.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import '../services/pos_service.dart';
 
 class POSScreen extends StatefulWidget {
   const POSScreen({super.key});
@@ -44,12 +46,24 @@ class _POSScreenState extends State<POSScreen> {
   final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
   final Color blackColor = Color(0xFF383838);
+  bool? hasInternet;
 
   @override
   void initState() {
     super.initState();
-    _initializeData();
+    _fetchProfileAndInitialize();
     searchController.addListener(_filterProducts);
+  }
+
+  Future<void> _fetchProfileAndInitialize() async {
+    await _checkInternetAndInitialize();
+    if (hasInternet == true) {
+      try {
+        await PosService.fetchAndUpdatePosProfile();
+      } catch (e) {
+        print('تعذر تحديث POS Profile من السيرفر: $e');
+      }
+    }
   }
 
   @override
@@ -58,8 +72,28 @@ class _POSScreenState extends State<POSScreen> {
     super.dispose();
   }
 
+  Future<void> _checkInternetAndInitialize() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    print("************${connectivityResult.first}");
+
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      realInternet = await checkRealInternet();
+    }
+    setState(() {
+      hasInternet = realInternet;
+      print("************$hasInternet");
+    });
+    if (hasInternet == true) {
+      _initializeData();
+    }
+  }
+
   Future<void> _initializeData() async {
     _loadingTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
       if (isFirstLoad) {
         setState(() => isFirstLoad = false);
       }
@@ -69,9 +103,10 @@ class _POSScreenState extends State<POSScreen> {
       final results = await Future.wait([
         _loadProducts(),
         _loadCustomers(),
-        _loadPosProfile(),
+        // _loadPosProfile(),
       ]);
 
+      if (!mounted) return;
       setState(() {
         products = results[0] as List<Item>;
         filteredProducts = products;
@@ -88,13 +123,17 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   Future<List<Item>> _loadProducts() async {
-    final items = await ItemService.getItems();
     itemGroups = await ItemService.getItemGroups();
-    return items;
+    final items = await ItemService.getItems();
+    final filteredItems =
+        items.where((item) => itemGroups.contains(item.itemGroup)).toList();
+    return filteredItems;
   }
 
   Future<List<Customer>> _loadCustomers() async {
-    return await CustomerService.getCustomers();
+    final customers = await CustomerService.getCustomers();
+    if (!mounted) return [];
+    return customers;
   }
 
   Future<Customer?> _loadPosProfile() async {
@@ -103,6 +142,7 @@ class _POSScreenState extends State<POSScreen> {
     if (posProfileJson == null) return null;
 
     final posProfile = json.decode(posProfileJson);
+    if (!mounted) return null;
     return Customer(
       name: posProfile['customer'],
       customerName: posProfile['customer'],
@@ -111,6 +151,8 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   void _handleError(dynamic error) {
+    if (hasInternet == false) return; // لا تغير رسالة الخطأ إذا لا يوجد اتصال
+    if (!mounted) return;
     setState(() {
       isLoading = false;
       errorMessage =
@@ -121,6 +163,7 @@ class _POSScreenState extends State<POSScreen> {
               : 'حدث خطأ في تحميل البيانات';
     });
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
     );
@@ -180,11 +223,23 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   void addToCart(Item product) {
-    setState(() {
-      final existingIndex = cartItems.indexWhere(
-        (item) => item['item_name'] == product.itemName,
+    final existingIndex = cartItems.indexWhere(
+      (item) => item['item_name'] == product.itemName,
+    );
+    int currentCartQty = 0;
+    if (existingIndex != -1) {
+      currentCartQty = cartItems[existingIndex]['quantity'];
+    }
+    final availableQty = product.qty;
+    if (currentCartQty + 1 > availableQty) {
+      MessageService.showWarning(
+        context,
+        "الكمية المطلوبة أكبر من الكمية المتوفرة في المخزن ($availableQty)",
+        title: "خطأ في الكمية",
       );
-
+      return;
+    }
+    setState(() {
       if (existingIndex != -1) {
         // إذا وجدنا العنصر، نزيد الكمية
         cartItems[existingIndex]['quantity'] += 1;
@@ -298,7 +353,7 @@ class _POSScreenState extends State<POSScreen> {
     الخصم: ${discountAmount ?? discountPercentage} ${discountAmount != null ? 'د.ر' : '%'}
     الإجمالي بعد الخصم: $totalAfterDiscount
     ''');
-
+      print("cartItems: $cartItems");
       final invoiceResult = await SalesInvoice.createSalesInvoice(
         customer: selectedCustomer!,
         items: cartItems,
@@ -335,14 +390,13 @@ class _POSScreenState extends State<POSScreen> {
         invoiceResult['full_invoice']['name'],
         invoiceResult['customer_outstanding'],
       );
+      MessageService.showSuccess(
+        context,
+        '${invoiceResult['full_invoice']['name']}تم إنشاء الفاتورة بنجاح',
+      );
+      Navigator.pop(context);
       Navigator.pop(context);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إتمام البيع بنجاح'),
-          backgroundColor: Colors.green,
-        ),
-      );
       final updatedProducts = await ItemService.getItems();
 
       setState(() {
@@ -608,7 +662,6 @@ class _POSScreenState extends State<POSScreen> {
     );
   }
 
-  //البحث و مجموعة الصنف //
   Widget _buildFilterSection() {
     return Padding(
       padding: const EdgeInsets.all(8.0),
@@ -738,20 +791,56 @@ class _POSScreenState extends State<POSScreen> {
                   'سلة المشتريات',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.blue[50],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${total.toStringAsFixed(2)} LYD',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue[800],
+                Row(
+                  children: [
+                    // إجمالي الكميات
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.green[50],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.inventory_2,
+                            size: 16,
+                            color: Colors.green[700],
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            '${calculateTotalQuantity()}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green[700],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    SizedBox(width: 8),
+                    // إجمالي السلة
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${total.toStringAsFixed(2)} LYD',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[800],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1030,6 +1119,7 @@ class _POSScreenState extends State<POSScreen> {
     Function? setModalState,
   ]) async {
     final item = cartItems[index];
+    print("item: $item");
     var originalPrice = item['original_price'] ?? item['price'];
 
     final controllers = {
@@ -1047,7 +1137,6 @@ class _POSScreenState extends State<POSScreen> {
         item['discount_amount'] != null ? 'amount' : 'percentage';
     bool isLoading = false;
 
-    // قائمة الوحدات المتاحة
     Set<String> availableUnits = {item['stock_uom']?.toString() ?? 'وحدة'};
     if (item['additionalUOMs'] != null) {
       availableUnits.addAll(
@@ -1056,6 +1145,9 @@ class _POSScreenState extends State<POSScreen> {
             .map((uom) => uom['uom'].toString()),
       );
     }
+
+    // تعريف selectedConversionFactor مرة واحدة فقط هنا
+    double selectedConversionFactor = item['conversion_factor'] ?? 1.0;
 
     await showDialog(
       context: context,
@@ -1078,26 +1170,47 @@ class _POSScreenState extends State<POSScreen> {
               controllers['price']!.text = newPrice.toStringAsFixed(2);
             }
 
-            // دالة تحديث السعر عند تغيير الوحدة
             Future<void> updatePriceForNewUnit(String? newUnit) async {
               if (newUnit == null || newUnit == selectedUnit) return;
 
               setStateDialog(() => isLoading = true);
 
               try {
+                double factor = 1.0;
+                if (newUnit == (item['stock_uom'] ?? 'وحدة')) {
+                  factor = 1.0;
+                } else if (item['additionalUOMs'] != null) {
+                  final uom = (item['additionalUOMs'] as List)
+                      .cast<Map<String, dynamic>>()
+                      .firstWhere(
+                        (u) => u['uom'] == newUnit,
+                        orElse: () => {'conversion_factor': 1.0},
+                      );
+                  factor =
+                      (uom['conversion_factor'] as num?)?.toDouble() ?? 1.0;
+                }
+                print("conversion_factor for $newUnit: $factor");
+
+                final priceList =
+                    await getPriceListFromPosProfile() ?? 'البيع القياسية';
                 final newPrice = await _getItemPriceForUnit(
                   item['name']?.toString() ?? '',
                   newUnit,
-                  'البيع القياسية',
+                  priceList,
                 );
 
-                if (context.mounted) {
-                  setStateDialog(() {
-                    selectedUnit = newUnit;
-                    originalPrice = newPrice ?? originalPrice;
-                    updatePrice(); // تحديث السعر مع تطبيق الخصم الحالي
-                  });
-                }
+                setStateDialog(() {
+                  selectedUnit = newUnit;
+                  if (newPrice != null) {
+                    originalPrice = newPrice;
+                  } else {
+                    originalPrice =
+                        (item['original_price'] ?? item['price']) * factor;
+                  }
+                  controllers['price']!.text = originalPrice.toStringAsFixed(2);
+                  selectedConversionFactor = factor; // تحديث المتغير هنا فقط
+                  updatePrice();
+                });
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1187,7 +1300,7 @@ class _POSScreenState extends State<POSScreen> {
                                       prefixIcon: Icon(
                                         discountType == 'percentage'
                                             ? Icons.percent
-                                            : Icons.attach_money,
+                                            : Icons.currency_exchange,
                                       ),
                                     ),
                                     onChanged: (_) => updatePrice(),
@@ -1289,6 +1402,8 @@ class _POSScreenState extends State<POSScreen> {
                         ...cartItems[index],
                         'quantity': newQuantity,
                         'uom': selectedUnit,
+                        'conversion_factor':
+                            selectedConversionFactor, // حفظ القيمة الصحيحة
                         'price': double.parse(controllers['price']!.text),
                         'original_price': originalPrice,
                         'discount_amount':
@@ -1345,19 +1460,15 @@ class _POSScreenState extends State<POSScreen> {
 
   double calculateTotal() {
     return cartItems.fold(0.0, (sum, item) {
-      double factor = 1.0;
-      if (item['unit'] != item['stock_uom'] && item['additionalUOMs'] != null) {
-        final uom = (item['additionalUOMs'] as List).firstWhere(
-          (u) => u['uom'] == item['unit'],
-          orElse: () => {'conversion_factor': 1.0},
-        );
-        factor = uom['conversion_factor'] ?? 1.0;
-      }
-      return sum + (item['price'] * item['quantity'] * factor);
+      // double factor = item['conversion_factor'] ?? 1.0;
+      return sum + (item['price'] * item['quantity']);
     });
   }
 
-  //قائمة العميل //
+  int calculateTotalQuantity() {
+    return cartItems.fold(0, (sum, item) => sum + (item['quantity'] as int));
+  }
+
   Future<void> _showCustomerDialog() async {
     TextEditingController searchController = TextEditingController();
     List<Customer> filteredCustomers = List.from(customers);
@@ -1486,6 +1597,54 @@ class _POSScreenState extends State<POSScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // if (hasInternet == null) {
+    //   return Scaffold(body: Center(child: CircularProgressIndicator()));
+    // }
+
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('نقطة البيع'),
+          backgroundColor: primaryColor,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: () {
+                  _checkInternetAndInitialize();
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (isLoading) {
       return Scaffold(
         appBar: AppBar(
@@ -2071,6 +2230,15 @@ void printTest(
   await SunmiPrinter.cutPaper();
 }
 
+Future<bool> checkRealInternet() async {
+  try {
+    final result = await InternetAddress.lookup('google.com');
+    return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
+
 Future<bool> isSunmiDevice() async {
   if (!Platform.isAndroid) return false;
 
@@ -2234,4 +2402,12 @@ class ProductCard extends StatelessWidget {
       ],
     );
   }
+}
+
+Future<String?> getPriceListFromPosProfile() async {
+  final prefs = await SharedPreferences.getInstance();
+  final posProfileJson = prefs.getString('selected_pos_profile');
+  if (posProfileJson == null) return null;
+  final posProfile = json.decode(posProfileJson);
+  return posProfile['price_list'] as String?;
 }

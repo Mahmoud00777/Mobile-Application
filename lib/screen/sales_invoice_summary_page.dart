@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/sales_invoice_summary.dart';
 import '../services/sales_invoice_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:io';
 
 class SalesInvoiceSummaryPage extends StatefulWidget {
   final int? invoiceType; // جعلها nullable
@@ -30,6 +32,7 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   DateTime _toDate = DateTime.now();
   int? _isReturnFilter = 0;
   int _quickFilter = 3;
+  bool? hasInternet;
 
   final List<SalesInvoiceSummary> _invoices = [];
   bool _isLoading = false;
@@ -41,15 +44,36 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
   @override
   void initState() {
     super.initState();
+    _checkInternet();
+    // لا تقم بتحميل البيانات إلا إذا كان هناك إنترنت
     _isDisposed = true;
-
-    // تعيين الفلتر الأولي بناءً على invoiceType
     if (widget.invoiceType == 0 || widget.invoiceType == 1) {
       _isReturnFilter = widget.invoiceType == 1 ? 1 : 0;
     }
     _quickFilter = widget.filter!;
+    // _applyQuickFilter(widget.filter!); // أزلنا الاستدعاء المباشر
+  }
 
-    _applyQuickFilter(widget.filter!);
+  Future<void> _checkInternet() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      try {
+        final result = await InternetAddress.lookup('google.com');
+        realInternet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        realInternet = false;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      hasInternet = realInternet;
+    });
+    if (realInternet) {
+      _applyQuickFilter(_quickFilter);
+    }
   }
 
   @override
@@ -150,6 +174,49 @@ class _SalesInvoiceSummaryPageState extends State<SalesInvoiceSummaryPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('تقرير المبيعات'),
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: _checkInternet,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('تقرير المبيعات'),

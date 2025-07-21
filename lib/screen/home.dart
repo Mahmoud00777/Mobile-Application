@@ -1,3 +1,4 @@
+import 'package:drsaf/Class/message_service.dart';
 import 'package:drsaf/screen/MaterialRequestScreenList.dart';
 import 'package:drsaf/screen/PosOpeningPage.dart';
 import 'package:drsaf/screen/appbar.dart';
@@ -16,6 +17,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class HomePage extends StatefulWidget {
   final bool showLoginSuccess;
@@ -53,10 +56,12 @@ class _HomePageState extends State<HomePage> with RouteAware {
   Map<String, dynamic>? selectedPOSProfile;
   String? time;
   final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
+  bool? hasInternet;
 
   @override
   void initState() {
     super.initState();
+    _checkPOSProfile();
     if (widget.showLoginSuccess) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -68,6 +73,21 @@ class _HomePageState extends State<HomePage> with RouteAware {
       });
     }
     _loadSelectedPOSProfile().then((_) => _loadStatistics());
+    _checkInternet();
+  }
+
+  Future<void> _checkPOSProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final posProfile = prefs.getString('selected_pos_profile');
+    final posOpen = prefs.getString('pos_open');
+    if (posProfile == null || posOpen == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const PosOpeningPage()),
+        );
+      });
+    }
   }
 
   @override
@@ -556,51 +576,113 @@ class _HomePageState extends State<HomePage> with RouteAware {
           ),
         ),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          // Added SingleChildScrollView here
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                if (selectedPOSProfile != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    child: Row(
-                      children: [
-                        Icon(Icons.access_time, size: 16, color: blackColor),
-                        const SizedBox(width: 8),
-                        Text(
-                          formatTime(time!),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: blackColor,
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await PosService.fetchAndUpdatePosProfile();
+          await _loadSelectedPOSProfile();
+          await _loadStatistics();
+
+          setState(() {});
+        },
+        child: Stack(
+          children: [
+            // محتوى الشاشة الرئيسي (الكروت، الداشبورد ...)
+            Positioned.fill(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      if (selectedPOSProfile != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16.0),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                size: 16,
+                                color: blackColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                formatTime(time!),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: blackColor,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      _buildDashboardCard(),
+                      const SizedBox(height: 16),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 16,
+                              childAspectRatio: 1.2,
+                            ),
+                        itemCount: buttons.length,
+                        itemBuilder:
+                            (context, index) =>
+                                _buildButton(buttons[index], context),
+                      ),
+                      const SizedBox(height: 20), // Added extra space at bottom
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // رسالة الإنترنت في الأعلى
+            if (hasInternet == false)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Material(
+                  elevation: 4,
+                  color: Colors.redAccent,
+                  child: SafeArea(
+                    bottom: false,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 16,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.wifi_off, color: Colors.white),
+                          const SizedBox(width: 8),
+                          Text(
+                            'لا يوجد اتصال بالإنترنت',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: Icon(Icons.refresh),
+                            label: Text('إعادة المحاولة'),
+                            onPressed: _checkInternet,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                _buildDashboardCard(),
-                const SizedBox(height: 16),
-                GridView.builder(
-                  shrinkWrap: true, // Added shrinkWrap
-                  physics:
-                      const NeverScrollableScrollPhysics(), // Disable GridView scroll
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 1.2,
-                  ),
-                  itemCount: buttons.length,
-                  itemBuilder:
-                      (context, index) => _buildButton(buttons[index], context),
                 ),
-                const SizedBox(height: 20), // Added extra space at bottom
-              ],
-            ),
-          ),
+              ),
+          ],
         ),
       ),
     );
@@ -635,12 +717,14 @@ class _HomePageState extends State<HomePage> with RouteAware {
             targetScreen = const MaterialRequestScreen();
             break;
           case 'نقطة البيع':
+            if (!await checkPosProfileHasPriceListAndWarehouse(context)) return;
             targetScreen = const POSScreen();
             break;
           case 'المدفوعات والديون':
             targetScreen = const PaymentEntryListPage();
             break;
           case 'الإرجاعات':
+            if (!await checkPosProfileHasPriceListAndWarehouse(context)) return;
             targetScreen = const POSReturnScreen();
             break;
           case 'STORE':
@@ -843,5 +927,52 @@ class _HomePageState extends State<HomePage> with RouteAware {
     } catch (e) {
       return isoTime;
     }
+  }
+
+  Future<void> _checkInternet() async {
+    if (!mounted) return;
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      realInternet = await _checkRealInternet();
+    }
+    setState(() {
+      hasInternet = realInternet;
+    });
+    if (hasInternet == true) {
+      _loadStatistics();
+    }
+  }
+
+  Future<bool> _checkRealInternet() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> checkPosProfileHasPriceListAndWarehouse(
+    BuildContext context,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final posProfileJson = prefs.getString('selected_pos_profile');
+    if (posProfileJson == null) {
+      MessageService.showWarning(context, 'لم يتم إعداد POS Profile بعد!');
+      return false;
+    }
+    final posProfile = jsonDecode(posProfileJson);
+    if (posProfile['selling_price_list'] == null ||
+        posProfile['warehouse'] == null) {
+      MessageService.showWarning(
+        context,
+        'يرجى التأكد من إعداد قائمة الأسعار والمخزن في إعدادات نقطة البيع!',
+      );
+      return false;
+    }
+    return true;
   }
 }

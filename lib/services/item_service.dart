@@ -12,7 +12,6 @@ class ItemService {
     bool includeUOMs = true,
   }) async {
     try {
-      // 1. جلب إعدادات نقطة البيع مرة واحدة
       final prefs = await SharedPreferences.getInstance();
       final posProfileJson = prefs.getString('selected_pos_profile');
 
@@ -24,7 +23,6 @@ class ItemService {
       final posPriceList = posProfile['selling_price_list'];
       final warehouse = posProfile['warehouse'];
 
-      // 2. جلب الأصناف الأساسية مع الحقول الضرورية فقط
       final fields = [
         '"name"',
         '"item_name"',
@@ -38,7 +36,7 @@ class ItemService {
       final itemsRes = await ApiClient.get(
         '/api/resource/Item?fields=[${fields.join(',')}]'
         '&filters=[["disabled","=",0]]'
-        '&limit_page_length=1000', // زيادة الحد إذا كان هناك الكثير من الأصناف
+        '&limit_page_length=1000',
       );
 
       if (itemsRes.statusCode != 200) {
@@ -48,7 +46,6 @@ class ItemService {
       final itemsData = json.decode(itemsRes.body)['data'] as List;
       if (itemsData.isEmpty) return [];
 
-      // 3. معالجة متوازية للبيانات
       final result = await _processItemsData(
         itemsData,
         posPriceList: posPriceList,
@@ -58,11 +55,15 @@ class ItemService {
         includeUOMs: includeUOMs,
       );
 
-      return result;
+      if (includeStock) {
+        return result.where((item) => item.qty > 0).toList();
+      } else {
+        return result;
+      }
     } catch (e, stack) {
       print('!!!! خطأ رئيسي في getItems: $e');
       print('Stack trace: $stack');
-      throw Exception('فشل في جلب الأصناف: ${e.toString()}');
+      throw Exception('فشل في جلب الأصناف:  ${e.toString()}');
     }
   }
 
@@ -277,20 +278,17 @@ class ItemService {
   }
 
   static Future<List<String>> getItemGroups() async {
-    try {
-      final response = await ApiClient.get(
-        '/api/resource/Item Group?fields=["name"]',
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return (data['data'] as List)
-            .map((group) => group['name'].toString())
-            .toList();
+    final prefs = await SharedPreferences.getInstance();
+    final posProfileJson = prefs.getString('selected_pos_profile');
+    final posProfile = json.decode(posProfileJson!) as Map<String, dynamic>;
+    final itemGroups = posProfile['item_groups'];
+    if (itemGroups is List) {
+      if (itemGroups.isNotEmpty && itemGroups.first is Map) {
+        return itemGroups.map((e) => e['item_group'].toString()).toList();
+      } else {
+        return itemGroups.map((e) => e.toString()).toList();
       }
-      throw Exception('Failed to load item groups');
-    } catch (e) {
-      throw Exception('Error fetching item groups: $e');
     }
+    return [];
   }
 }

@@ -2,6 +2,8 @@ import '../services/payment_service_list.dart';
 import 'package:flutter/material.dart';
 import '../models/payment_entry_list.dart';
 import 'create_payment_page.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:io';
 
 class PaymentEntryListPage extends StatefulWidget {
   const PaymentEntryListPage({super.key});
@@ -19,10 +21,34 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
   final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
   final Color blackColor = Color(0xFF383838);
+  bool? hasInternet;
+
   @override
   void initState() {
     super.initState();
-    _loadPayments();
+    _checkInternet();
+  }
+
+  Future<void> _checkInternet() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      try {
+        final result = await InternetAddress.lookup('google.com');
+        realInternet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        realInternet = false;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      hasInternet = realInternet;
+    });
+    if (realInternet) {
+      _loadPayments();
+    }
   }
 
   Future<void> _loadPayments() async {
@@ -43,13 +69,58 @@ class _PaymentEntryListPageState extends State<PaymentEntryListPage> {
 
   void _onSearch() {
     FocusScope.of(context).unfocus();
-    _loadPayments();
+    if (hasInternet == true) {
+      _loadPayments();
+    }
   }
 
   double get totalPaid => _payments.fold(0.0, (sum, e) => sum + e.paidAmount);
 
   @override
   Widget build(BuildContext context) {
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('دفعات العملاء'),
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: _checkInternet,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('دفعات العملاء'),

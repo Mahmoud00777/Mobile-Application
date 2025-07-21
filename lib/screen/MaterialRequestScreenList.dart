@@ -15,26 +15,29 @@ class MaterialRequestScreen extends StatefulWidget {
 class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   late Future<List<MaterialRequest>> _requestsFuture;
 
-  // Theme colors
   final Color primaryColor = Color(0xFF60B245);
   final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
   final Color blackColor = Color(0xFF383838);
   final Color pressedColor = const Color(0xFFF2E2B1);
 
-  // Date range filter
   DateTimeRange? _selectedDateRange;
   DateTime _fromDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _toDate = DateTime.now();
   final DateFormat _df = DateFormat('yyyy-MM-dd');
 
-  // Search & status filter
   String _searchQuery = '';
   String? _selectedStatus;
+  static const Map<String, String> statusLabels = {
+    'Pending': 'قيد الانتظار',
+    'Draft': 'مسودة',
+    'Transferred': 'تم التحويل',
+    'Cancelled': 'ملغاة',
+  };
   final List<String> _statusOptions = [
+    'Pending',
     'Draft',
     'Transferred',
-    'Pending',
     'Cancelled',
   ];
 
@@ -104,36 +107,44 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Filter by Status',
+                'فلتر حسب الطلب',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
+              // خيار الكل
               ListTile(
-                title: const Text('All Statuses'),
-                leading: Radio<String?>(
-                  value: null,
-                  groupValue: _selectedStatus,
-                  onChanged: (value) {
+                title: const Text('الكل'),
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.list, color: Colors.black54),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+                onTap: () {
+                  setState(() {
+                    _selectedStatus = null;
+                  });
+                  Navigator.pop(context);
+                },
+              ),
+              // خيارات الحالات
+              ..._statusOptions.map((status) {
+                return ListTile(
+                  title: Text(statusLabels[status] ?? status),
+                  leading: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _getStatusIcon(statusLabels[status] ?? status),
+                      const SizedBox(width: 8),
+                    ],
+                  ),
+                  onTap: () {
                     setState(() {
-                      _selectedStatus = value;
+                      _selectedStatus = status;
                     });
                     Navigator.pop(context);
                   },
-                ),
-              ),
-              ..._statusOptions.map((status) {
-                return ListTile(
-                  title: Text(status),
-                  leading: Radio<String?>(
-                    value: status,
-                    groupValue: _selectedStatus,
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedStatus = value;
-                      });
-                      Navigator.pop(context);
-                    },
-                  ),
                 );
               }),
             ],
@@ -141,6 +152,21 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
         );
       },
     );
+  }
+
+  Icon _getStatusIcon(String status) {
+    switch (status) {
+      case 'قيد الانتظار':
+        return const Icon(Icons.hourglass_top, color: Colors.orange);
+      case 'تمت الموافقة':
+        return const Icon(Icons.done_all, color: Colors.green);
+      case 'ملغاة':
+        return const Icon(Icons.cancel, color: Colors.red);
+      case 'قيد التحويل':
+        return const Icon(Icons.sync_alt, color: Colors.blue);
+      default:
+        return const Icon(Icons.info, color: Colors.grey);
+    }
   }
 
   bool _matchesYearMonth(String dateStr, String query) {
@@ -172,14 +198,16 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
   Widget _buildRequestCard(BuildContext context, MaterialRequest req) {
     Color getStatusColor(String status) {
       switch (status) {
-        case 'Draft':
-          return Colors.orange;
-        case 'Transferred':
-          return Colors.green;
-        case 'Cancelled':
+        case 'مسودة':
           return Colors.red;
-        case 'Pending':
+        case 'تم التحويل':
           return const Color.fromARGB(255, 32, 85, 202);
+        case 'ملغاة':
+          return Colors.red;
+        case 'قيد الانتظار':
+          return Colors.orange;
+        case 'تمت الموافقة ':
+          return Colors.green;
         default:
           return const Color.fromARGB(255, 105, 105, 106);
       }
@@ -219,14 +247,16 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
                         const SizedBox(width: 6),
                         Chip(
                           label: Text(
-                            req.status,
+                            statusLabels[req.status] ?? req.status,
                             style: TextStyle(
-                              color: getStatusColor(req.status),
+                              color: getStatusColor(
+                                statusLabels[req.status] ?? req.status,
+                              ),
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           backgroundColor: getStatusColor(
-                            req.status,
+                            statusLabels[req.status] ?? req.status,
                           ).withOpacity(0.15),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -287,9 +317,14 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
+        iconTheme: IconThemeData(color: Colors.white),
         title: const Text(
-          'Material Requests',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+          'طلبات المواد',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: primaryColor,
         centerTitle: true,
@@ -301,7 +336,8 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            color: Colors.white,
             onPressed: _refreshRequests,
           ),
         ],
@@ -485,7 +521,7 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen> {
               onPressed: _showFilterBottomSheet,
               backgroundColor: primaryColor,
               child: const Icon(
-                Icons.filter_list,
+                Icons.filter_alt,
                 size: 28,
                 color: Colors.white,
               ),

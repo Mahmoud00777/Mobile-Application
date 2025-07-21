@@ -60,7 +60,7 @@ class SalesInvoice {
                     'uom': item['uom'] ?? 'Nos',
                     'discount_amount': item['discount_amount'] ?? 0.0,
                     'discount_percentage': item['discount_percentage'] ?? 0.0,
-                    'conversion_factor': 1,
+                    'conversion_factor': item['conversion_factor'] ?? 1,
                   },
                 )
                 .toList(),
@@ -303,7 +303,6 @@ class SalesInvoice {
     }
   }
 
-  // دالة مساعدة لتحديث حالة الزيارة
   static Future<Map<String, dynamic>> updateVisitStatus({
     required String customerName,
     required String shiftId,
@@ -311,7 +310,6 @@ class SalesInvoice {
     required String invoiceNumber,
   }) async {
     try {
-      // 1. البحث عن الزيارة المفتوحة لهذا الزبون والوردية
       final visitResponse = await ApiClient.get(
         '/api/resource/Visit?fields=["name"]'
         '&filters=['
@@ -327,11 +325,10 @@ class SalesInvoice {
         if (visits.isNotEmpty) {
           final visitName = visits.first['name'];
 
-          // 2. تحديث حالة الزيارة
           final updateResponse =
               await ApiClient.putJson('/api/resource/Visit/$visitName', {
                 'select_state': newStatus,
-                'data_time': DateTime.now().toIso8601String().split('T')[0],
+                'data_time': DateTime.now().toIso8601String(),
               });
 
           if (updateResponse.statusCode == 200) {

@@ -256,13 +256,11 @@ class PosService {
     Map<String, dynamic> posProfile,
   ) async {
     try {
-      // 1. التحقق من المستخدم الحالي
       final user = await AuthService.getCurrentUser();
       if (user == null) {
         throw Exception('المستخدم غير معروف أو غير مسجل الدخول');
       }
 
-      // 2. الحصول على اسم الوردية المفتوحة
       final prefs = await SharedPreferences.getInstance();
       final posOpeningName = prefs.getString('pos_open');
       if (posOpeningName == null || posOpeningName.isEmpty) {
@@ -270,15 +268,15 @@ class PosService {
       }
       print('posOpeningName === $posOpeningName');
 
-      // 3. جلب فواتير الوردية الحالية
       final invoices = await _getShiftInvoices(posOpeningName);
       final payment = await _getShiftPayment(posOpeningName);
       final visits = await _getShiftVisit(posOpeningName);
+      // final salesReturn = await _getShiftReturnInvoices(posOpeningName);
+
       print('عدد الفواتير في الوردية: ${invoices.length}');
       print('عدد مدفوعات في الوردية: ${payment.length}');
       print('عدد زيارات في الوردية: ${visits.length}');
 
-      // 4. إعداد بيانات الإغلاق
       final now = DateTime.now().toIso8601String();
       final payments = posProfile['payments'] as List<dynamic>? ?? [];
 
@@ -294,7 +292,6 @@ class PosService {
             };
           }).toList();
 
-      // 5. تحضير بيانات فواتير المبيعات
       final invoiceTransactions =
           invoices.map((invoice) {
             return {
@@ -314,7 +311,7 @@ class PosService {
             return {'visit': visit['name'], 'customer': visit['customer']};
           }).toList();
       final totalQty = invoices.fold(
-        0.0, // القيمة الابتدائية (يمكن أن تكون `0` إذا كانت الكمية عددًا صحيحًا)
+        0.0,
         (sum, invoice) => sum + (invoice['total_qty'] as num).toDouble(),
       );
 
@@ -335,7 +332,19 @@ class PosService {
       }
 
       print('════════ نهاية القائمة ════════');
-      // 6. إنشاء بيانات إغلاق الوردية
+      final sumInvoices = invoices.fold(
+        0.0,
+        (sum, invoice) => sum + (invoice['grand_total'] as num).toDouble(),
+      );
+      final sumPayments = payment.fold(
+        0.0,
+        (sum, pay) => sum + (pay['paid_amount'] as num).toDouble(),
+      );
+      // final sumReturns = salesReturn.fold(
+      //   0.0,
+      //   (sum, ret) => sum + (ret['grand_total'] as num).toDouble(),
+      // );
+      final grandTotal = sumInvoices + sumPayments;
       final posClosingData = {
         'pos_profile': posProfile['name'],
         'user': user,
@@ -347,19 +356,12 @@ class PosService {
         'custom_sales_invoce_transactions': invoiceTransactions,
         'custom_payment_transactions': paymentsTransactions,
         'custom_visit_transactions': visitTransactions,
-        'grand_total': invoices.fold(
-          0.0,
-          (sum, invoice) => sum + (invoice['grand_total'] as num).toDouble(),
-        ),
-        'net_total': invoices.fold(
-          0.0,
-          (sum, invoice) => sum + (invoice['grand_total'] as num).toDouble(),
-        ),
+        'grand_total': grandTotal,
+        'net_total': grandTotal,
         'total_quantity': totalQty,
         'docstatus': 1,
       };
 
-      // 7. إرسال طلب إنشاء إغلاق الوردية
       final res = await ApiClient.postJson(
         '/api/resource/POS Closing Entry',
         posClosingData,
@@ -372,7 +374,6 @@ class PosService {
 
       final closingEntryName = jsonDecode(res.body)['data']['name'];
 
-      // 8. تحديث حالة الفواتير بربطها بإغلاق الوردية
       await _updateInvoicesWithClosingEntry(invoices, closingEntryName);
 
       // 9. تحديث حالة الوردية المفتوحة كمغلقة
@@ -415,7 +416,29 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
-        '["status","in",["Paid","Partly Paid"]]'
+        '["status","in",["Paid","Partly Paid","Return"]]'
+        ']&fields=["name","posting_date","grand_total","customer","status","total_qty"]',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return List<Map<String, dynamic>>.from(data['data'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching shift invoices: $e');
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> _getShiftReturnInvoices(
+    String posOpeningName,
+  ) async {
+    try {
+      final response = await ApiClient.get(
+        '/api/resource/Sales Invoice?filters=['
+        '["custom_pos_open_shift","=","$posOpeningName"],'
+        '["is_return","=","True"]'
         ']&fields=["name","posting_date","grand_total","customer","status","total_qty"]',
       );
 
@@ -437,7 +460,7 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Payment Entry?filters=['
         '["custom_pos_opening_shift","=","$posOpeningName"]'
-        ']&fields=["name","party_name"]',
+        ']&fields=["name","party_name","paid_amount"]',
       );
 
       if (response.statusCode == 200) {
@@ -614,7 +637,7 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
-        '["status","in",["Paid","Partly Paid"]],'
+        '["status","in",["Paid","Partly Paid","Return"]],'
         '["docstatus","=",1]'
         ']&fields=["name","posting_date","grand_total","customer"]',
       );
@@ -781,6 +804,29 @@ class PosService {
     } catch (e) {
       debugPrint('Error fetching POS Profile: $e');
       throw Exception('تعذر حفظ إعدادات نقطة البيع');
+    }
+  }
+
+  static Future<void> fetchAndUpdatePosProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final posProfileJson = prefs.getString('selected_pos_profile');
+    String? profileName;
+    if (posProfileJson != null) {
+      final posProfile = json.decode(posProfileJson);
+      profileName = posProfile['name'];
+    }
+    print("profileName: $profileName");
+
+    final response = await ApiClient.get(
+      '/api/resource/POS Profile/$profileName',
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body)['data'];
+      print("data: $data");
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('selected_pos_profile', json.encode(data));
+    } else {
+      throw Exception('فشل في جلب POS Profile من السيرفر');
     }
   }
 

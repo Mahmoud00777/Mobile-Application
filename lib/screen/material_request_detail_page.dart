@@ -4,11 +4,11 @@ import '../services/materials_service.dart';
 
 class MaterialRequestDetailPage extends StatefulWidget {
   final String requestName;
-  final Color primaryColor = const Color(0xFFBDB395);
+  final Color primaryColor = const Color(0xFF60B245);
   final Color secondaryColor = Colors.white;
-  final Color backgroundColor = const Color(0xFFF6F0F0);
-  final Color pressedColor = const Color(0xFFF2E2B1);
-  final Color textColor = const Color(0xFF333333);
+  final Color backgroundColor = const Color(0xFFF2F2F2);
+  final Color pressedColor = const Color(0xFFFFFFFF);
+  final Color textColor = const Color(0xFF383838);
 
   const MaterialRequestDetailPage({super.key, required this.requestName});
 
@@ -35,7 +35,11 @@ class _MaterialRequestDetailPageState extends State<MaterialRequestDetailPage> {
       appBar: AppBar(
         title: const Text(
           'تفاصيل طلب مواد',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: widget.primaryColor,
         centerTitle: true,
@@ -46,7 +50,6 @@ class _MaterialRequestDetailPageState extends State<MaterialRequestDetailPage> {
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 4,
       ),
 
       body: FutureBuilder<MaterialRequest>(

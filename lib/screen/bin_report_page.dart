@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:drsaf/services/warehouse_service.dart';
 import '../models/bin_report.dart';
 import '../services/bin_report_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:io';
 
 class BinReportPage extends StatefulWidget {
   const BinReportPage({super.key});
@@ -20,6 +22,7 @@ class _BinReportPageState extends State<BinReportPage> {
   int _page = 0;
   final int _pageSize = 20;
   bool _hasMore = true;
+  bool? hasInternet;
 
   final Color primaryColor = Color(0xFF60B245);
   final Color secondaryColor = Color(0xFFFFFFFF);
@@ -28,13 +31,35 @@ class _BinReportPageState extends State<BinReportPage> {
   @override
   void initState() {
     super.initState();
-    _loadWarehouses();
+    _checkInternet();
   }
 
   @override
   void dispose() {
     _itemController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkInternet() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool realInternet = false;
+    if (connectivityResult.first == ConnectivityResult.wifi ||
+        connectivityResult.first == ConnectivityResult.mobile ||
+        connectivityResult.first == ConnectivityResult.ethernet) {
+      try {
+        final result = await InternetAddress.lookup('google.com');
+        realInternet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } catch (_) {
+        realInternet = false;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      hasInternet = realInternet;
+    });
+    if (realInternet) {
+      _loadWarehouses();
+    }
   }
 
   Future<void> _loadWarehouses() async {
@@ -97,6 +122,49 @@ class _BinReportPageState extends State<BinReportPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (hasInternet == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('تقرير المخزون'),
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
+              const SizedBox(height: 24),
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى التحقق من الاتصال وحاول مرة أخرى',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                icon: Icon(Icons.refresh),
+                label: Text('إعادة المحاولة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  textStyle: TextStyle(fontSize: 18),
+                ),
+                onPressed: _checkInternet,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Theme(
       data: Theme.of(context).copyWith(
         primaryColor: primaryColor,
