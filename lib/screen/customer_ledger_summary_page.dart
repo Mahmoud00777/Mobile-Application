@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/customer_ledger_summary.dart';
 import '../services/customer_ledger_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -55,10 +58,16 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
     }
   }
 
-  void _loadData() {
+  Future<void> _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final posProfileJson = prefs.getString('selected_pos_profile');
+    final openShiftId = prefs.getString('pos_open');
+
+    final posProfile = json.decode(posProfileJson!);
+    final company = posProfile['company'] ?? 'HR';
     final df = DateFormat('yyyy-MM-dd');
     _future = CustomerLedgerService.fetchSummary(
-      company: 'HR',
+      company: company,
       fromDate: df.format(_fromDate),
       toDate: df.format(_toDate),
     );

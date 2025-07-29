@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:drsaf/models/sales_invoice_summary.dart';
 import 'package:drsaf/services/api_client.dart';
 import 'package:drsaf/services/visit_service.dart';
 import 'package:drsaf/Class/message_service.dart';
@@ -12,7 +13,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/sales_invoice.dart';
 import '../services/item_service.dart';
 import '../services/customer_service.dart';
-import '../models/item.dart';
+import '../models/Item.dart';
 import '../models/customer.dart';
 import '../services/pos_service.dart';
 import 'package:flutter/services.dart';
@@ -48,7 +49,8 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
   final Color blackColor = Color(0xFF383838);
-  bool? hasInternet; // null = لم يتم الفحص بعد
+  bool? hasInternet;
+  String? invoDraftName;
 
   @override
   void initState() {
@@ -66,7 +68,6 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         print('تعذر تحديث POS Profile من السيرفر: $e');
       }
     }
-    // يمكنك هنا إعادة تحميل البيانات إذا لزم الأمر بعد التحديث
   }
 
   @override
@@ -105,7 +106,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   }
 
   Future<List<Item>> _loadProducts() async {
-    final items = await ItemService.getItems();
+    final items = await ItemService.getItemsForReturn();
     itemGroups = await ItemService.getItemGroups();
     return items;
   }
@@ -185,26 +186,28 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
 
   void addToCart(Item product) {
     setState(() {
-      // البحث باستخدام item_name بدلاً من name
       final existingIndex = cartItems.indexWhere(
         (item) => item['item_name'] == product.itemName,
       );
-
+      final selectedUOM = product.uom;
+      final conversionFactor = getConversionFactor(
+        product.additionalUOMs ?? [],
+        selectedUOM,
+      );
       if (existingIndex != -1) {
-        // إذا وجدنا العنصر، نزيد الكمية
         cartItems[existingIndex]['quantity'] += 1;
       } else {
-        // إذا لم نجده، نضيف عنصر جديد
         cartItems.add({
           'name': product.name,
           'item_name': product.itemName,
           'price': product.rate,
+          'original_price': product.rate,
+          'conversion_factor': conversionFactor,
           'quantity': 1,
           'uom': product.uom,
           'additionalUOMs': product.additionalUOMs,
         });
       }
-      // تحديث الإجمالي
       total += product.rate;
     });
   }
@@ -222,8 +225,21 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       cartItems.clear();
       total = 0.0;
       selectedCustomer = null;
+      invoDraftName = null;
     });
     setModalState?.call(() {});
+  }
+
+  double getConversionFactor(List<dynamic> additionalUOMs, String selectedUOM) {
+    try {
+      final uom = additionalUOMs.firstWhere(
+        (uom) => uom['uom'] == selectedUOM,
+        orElse: () => {'conversion_factor': 1.0},
+      );
+      return (uom['conversion_factor'] as num).toDouble();
+    } catch (e) {
+      return 1.0;
+    }
   }
 
   Future<void> _processPayment(BuildContext context) async {
@@ -293,16 +309,30 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       print('paymentData-----------------${paymentData['paid_amount']}');
       final double outstanding = paymentData['outstanding_amount'];
 
-      final invoiceResult = await SalesInvoice.createReturnSalesInvoice(
-        customer: selectedCustomer!,
-        items: cartItems,
-        total: total,
-        paymentMethod: paymentData,
-        paidAmount: paidAmount,
-        outstandingAmount: outstanding,
-        notes: paymentData['notes'],
-        attachedImages: paymentData['attached_images'],
-      );
+      final Map<String, dynamic> invoiceResult;
+      if (invoDraftName == null) {
+        invoiceResult = await SalesInvoice.createReturnSalesInvoice(
+          customer: selectedCustomer!,
+          items: cartItems,
+          total: total,
+          paymentMethod: paymentData,
+          paidAmount: paidAmount,
+          outstandingAmount: outstanding,
+          notes: paymentData['notes'],
+          attachedImages: paymentData['attached_images'],
+        );
+      } else {
+        print("update");
+        invoiceResult = await SalesInvoice.updateReturnSalesInvoice(
+          customer: selectedCustomer!,
+          items: cartItems,
+          total: total,
+          paymentMethod: paymentData,
+          paidAmount: paidAmount,
+          outstandingAmount: outstanding,
+          invoName: invoDraftName,
+        );
+      }
 
       if (!invoiceResult['success']) {
         final errorMessage = invoiceResult['error'] ?? 'حدث خطأ غير معروف';
@@ -335,17 +365,18 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       MessageService.showSuccess(
         context,
         'تم إتمام الإرجاع بنجاح',
-        title: 'تم إتمام الإرجاع بنجاح',
+        title: '${invoiceResult['full_invoice']['name']}تم إتمام الإرجاع بنجاح',
       );
       Navigator.pop(context);
       Navigator.pop(context);
-      final updatedProducts = await ItemService.getItems();
+      final updatedProducts = await ItemService.getItems(includeStock: false);
       setState(() {
         products = updatedProducts;
         filteredProducts = updatedProducts;
         cartItems.clear();
         total = 0.0;
         selectedCustomer = null;
+        invoDraftName = null;
       });
     } catch (e) {
       Navigator.pop(context);
@@ -518,16 +549,15 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
 
                     final paid = double.tryParse(amountController.text) ?? 0.0;
                     final rounded = paid.roundToDouble();
-                    if (rounded < 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('المبلغ يجب أن يكون أكبر من الصفر'),
-                        ),
+                    if (rounded != 0) {
+                      MessageService.showWarning(
+                        context,
+                        'يجب ان يكون مبلغ مسترجع صفر',
+                        title: 'فشل في إتمام الإرجاع',
                       );
                       return;
                     }
 
-                    // رفع الصور إلى السيرفر والحصول على روابطها
                     List<String> imageUrls = [];
                     if (attachedImages.isNotEmpty) {
                       showDialog(
@@ -566,7 +596,6 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     );
   }
 
-  //البحث و مجموعة الصنف //
   Widget _buildFilterSection() {
     return Padding(
       padding: const EdgeInsets.all(8.0),
@@ -989,14 +1018,14 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       text: item['price'].toStringAsFixed(2),
     );
 
-    // 1. البيانات الأساسية
     String selectedUnit = item['uom'] ?? item['stock_uom'] ?? 'وحدة';
     double currentPrice = item['price'];
+    double originalPrice = item['original_price'] ?? item['price'];
+    double selectedConversionFactor = item['conversion_factor'] ?? 1.0;
     String itemCode = item['name']?.toString() ?? '';
     String priceList = 'البيع القياسية';
 
-    // 2. قائمة الوحدات المتاحة
-    Set<String> availableUnits = {item['stock_uom']?.toString() ?? 'وحدة'};
+    Set<String> availableUnits = {item['uom']?.toString() ?? 'وحدة'};
     if (item['additionalUOMs'] != null) {
       availableUnits.addAll(
         (item['additionalUOMs'] as List)
@@ -1027,7 +1056,17 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                 if (context.mounted) {
                   setStateDialog(() {
                     selectedUnit = newUnit;
-                    currentPrice = newPrice ?? currentPrice;
+                    if (newPrice != null) {
+                      originalPrice = newPrice;
+                    } else {
+                      originalPrice = item['original_price'] ?? item['price'];
+                    }
+                    final factor = _calculateConversionFactor(newUnit, item);
+                    selectedConversionFactor = factor;
+                    currentPrice = originalPrice;
+                    print(
+                      'currentPrice ===>>$currentPrice $originalPrice $factor',
+                    );
                     priceController.text = currentPrice.toStringAsFixed(2);
                   });
                 }
@@ -1116,6 +1155,8 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                           'quantity': newQuantity,
                           'uom': selectedUnit,
                           'price': currentPrice,
+                          'original_price': originalPrice,
+                          'conversion_factor': selectedConversionFactor,
                         };
                         total = calculateTotal();
                       });
@@ -1137,6 +1178,17 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         );
       },
     );
+  }
+
+  double _calculateConversionFactor(String unit, Map<String, dynamic> item) {
+    if (item['additionalUOMs'] != null) {
+      final uom = (item['additionalUOMs'] as List).firstWhere(
+        (u) => u['uom'] == unit,
+        orElse: () => {'conversion_factor': 1.0},
+      );
+      return uom['conversion_factor'] ?? 1.0;
+    }
+    return 1.0;
   }
 
   Future<double?> _getItemPriceForUnit(
@@ -1176,16 +1228,12 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
 
   double calculateTotal() {
     return cartItems.fold(0.0, (sum, item) {
-      double factor = 1.0;
-      if (item['unit'] != item['stock_uom'] && item['additionalUOMs'] != null) {
-        final uom = (item['additionalUOMs'] as List).firstWhere(
-          (u) => u['uom'] == item['unit'],
-          orElse: () => {'conversion_factor': 1.0},
-        );
-        factor = uom['conversion_factor'] ?? 1.0;
-      }
-      return sum + (item['price'] * item['quantity'] * factor);
+      return sum + (item['price'] * item['quantity']);
     });
+  }
+
+  int calculateTotalQuantity() {
+    return cartItems.fold(0, (sum, item) => sum + (item['quantity'] as int));
   }
 
   //قائمة العميل //
@@ -1400,8 +1448,13 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
           style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
         ),
         SunmiColumn(
+          text: 'الوحدة',
+          width: 2,
+          style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT, bold: true),
+        ),
+        SunmiColumn(
           text: 'المنتج',
-          width: 5,
+          width: 4,
           style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT, bold: true),
         ),
       ],
@@ -1415,17 +1468,18 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       final name = item['item_name'] ?? '';
       final qty = item['quantity'] ?? 0;
       final rate = item['price'] ?? 0.0;
+      final uom = item['uom'];
       final amount = (qty * rate);
       totalAmount += amount;
       await SunmiPrinter.printRow(
         cols: [
           SunmiColumn(
-            text: amount.toStringAsFixed(1),
+            text: amount.toStringAsFixed(0),
             width: 2,
             style: SunmiTextStyle(align: SunmiPrintAlign.LEFT),
           ),
           SunmiColumn(
-            text: rate.toStringAsFixed(1),
+            text: rate.toStringAsFixed(0),
             width: 2,
             style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
           ),
@@ -1433,6 +1487,11 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
             text: '×$qty',
             width: 2,
             style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+          ),
+          SunmiColumn(
+            text: uom,
+            width: 2,
+            style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT),
           ),
           SunmiColumn(
             text: name,
@@ -1448,7 +1507,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     }
     await SunmiPrinter.printText(
       'الإجمالي: ${totalAmount.toStringAsFixed(1)} LYD',
-      style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.LEFT),
+      style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.RIGHT),
     );
     await SunmiPrinter.printText(
       '--------------------------------',
@@ -1456,11 +1515,15 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     );
     await SunmiPrinter.printText(
       'شكرًا لكم!',
-      style: SunmiTextStyle(bold: true, fontSize: 35),
+      style: SunmiTextStyle(
+        bold: true,
+        fontSize: 35,
+        align: SunmiPrintAlign.CENTER,
+      ),
     );
     await SunmiPrinter.printText(
       'نتمنى لكم يوماً سعيداً 😊',
-      style: SunmiTextStyle(fontSize: 30),
+      style: SunmiTextStyle(fontSize: 30, align: SunmiPrintAlign.CENTER),
     );
     await SunmiPrinter.lineWrap(3);
     await SunmiPrinter.cutPaper();
@@ -1477,10 +1540,9 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (hasInternet == null) {
-      // لم يتم فحص الإنترنت بعد
-      return Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    // if (hasInternet == null) {
+    //   return Scaffold(body: Center(child: CircularProgressIndicator()));
+    // }
 
     if (hasInternet == false) {
       return Scaffold(
@@ -1551,34 +1613,130 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     }
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      floatingActionButton: Stack(
+        children: [
+          Positioned(
+            bottom: 150,
+            right: 5,
+            child: FloatingActionButton(
+              onPressed: () async {
+                HapticFeedback.lightImpact();
+                await showModalBottomSheet(
+                  context: context,
+                  backgroundColor: Colors.transparent,
+                  barrierColor: Colors.black54,
+                  isDismissible: true,
+                  builder:
+                      (context) => DraggableScrollableSheet(
+                        initialChildSize: 0.6,
+                        minChildSize: 0.3,
+                        maxChildSize: 0.9,
+                        builder: (_, controller) {
+                          return FutureBuilder<Widget>(
+                            future: _ShowListDraftInvoices(),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              }
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(25),
+                                  ),
+                                ),
+                                child:
+                                    snapshot.data ??
+                                    Center(child: Text('حدث خطأ غير متوقع')),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                );
+              },
+              backgroundColor: Colors.blue,
+              heroTag: 'list_button',
+              child: Icon(Icons.list, color: Colors.white),
             ),
-            builder: (context) {
-              final screenHeight = MediaQuery.of(context).size.height;
-              return StatefulBuilder(
-                builder: (context, setModalState) {
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          Positioned(
+            bottom: 80,
+            right: 5,
+            child: FloatingActionButton(
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                _saveInvoice();
+              },
+              backgroundColor: Colors.blue,
+              heroTag: 'save_button',
+              child: Icon(Icons.save, color: Colors.white),
+            ),
+          ),
+          Positioned(
+            bottom: 16,
+            right: 5,
+            child: Stack(
+              alignment: Alignment.topRight,
+              children: [
+                FloatingActionButton(
+                  heroTag: 'cart_button',
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
+                      ),
+                      builder: (context) {
+                        final screenHeight = MediaQuery.of(context).size.height;
+                        return StatefulBuilder(
+                          builder: (context, setModalState) {
+                            return Padding(
+                              padding: EdgeInsets.only(
+                                bottom:
+                                    MediaQuery.of(context).viewInsets.bottom,
+                              ),
+                              child: SizedBox(
+                                height: screenHeight * 0.5,
+                                child: _buildCartSection(setModalState),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                  backgroundColor: Color(0xFF60B245),
+                  child: Icon(Icons.shopping_cart, color: Colors.white),
+                ),
+                if (cartItems.isNotEmpty)
+                  Container(
+                    padding: EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
                     ),
-                    child: SizedBox(
-                      height: screenHeight * 0.5,
-                      child: _buildCartSection(setModalState),
+                    constraints: BoxConstraints(minWidth: 22, minHeight: 22),
+                    child: Text(
+                      '${calculateTotalQuantity()}',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                  );
-                },
-              );
-            },
-          );
-        },
-        backgroundColor: Color(0xFF60B245),
-        child: Icon(Icons.shopping_cart, color: Color(0xffffffff)),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
       appBar: AppBar(
         title: const Text('مرتجعات', style: TextStyle(color: Colors.white)),
@@ -1590,9 +1748,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
             bottomLeft: Radius.circular(25),
           ),
         ),
-        iconTheme: const IconThemeData(
-          color: Colors.white, // ⬅ هذا يجعل زر الرجوع أبيض
-        ),
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -1953,6 +2109,258 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _saveInvoice() async {
+    if (invoDraftName != null) {
+      MessageService.showWarning(context, "لايمكنك حفظ فاتورة معلقة");
+      return;
+    }
+    if (selectedCustomer == null) {
+      MessageService.showWarning(
+        context,
+        'الرجاء اختيار عميل أولاً',
+        title: 'فشل في إتمام البيع',
+      );
+      return;
+    }
+
+    if (cartItems.isEmpty) {
+      MessageService.showWarning(
+        context,
+        'السلة فارغة',
+        title: 'فشل في إتمام البيع',
+      );
+      return;
+    }
+
+    final invoiceResult = await SalesInvoice.createReturnDraftSalesInvoice(
+      customer: selectedCustomer!,
+      items: cartItems,
+      total: 0,
+      paidAmount: 0,
+      outstandingAmount: 0,
+      discountAmount: 0,
+      discountPercentage: 0,
+    );
+
+    MessageService.showSuccess(context, 'تم إنشاء الفاتورة معلقة بنجاح');
+    setState(() {
+      cartItems.clear();
+      total = 0.0;
+      selectedCustomer = null;
+    });
+  }
+
+  Future<Widget> _ShowListDraftInvoices() async {
+    try {
+      final List<SalesInvoiceSummary>? invoices =
+          await SalesInvoice.getDraftReturnSalesinvoice();
+
+      if (invoices == null || invoices.isEmpty) {
+        return Center(
+          child: Text('لا توجد فواتير مسودة', style: TextStyle(fontSize: 16)),
+        );
+      }
+
+      return ListView.separated(
+        padding: EdgeInsets.all(16),
+        itemCount: invoices.length,
+        separatorBuilder: (_, __) => SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final invoice = invoices[index];
+          return Dismissible(
+            key: Key(invoice.invoiceNumber),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: EdgeInsets.only(right: 20),
+              color: Colors.red,
+              child: Icon(Icons.delete, color: Colors.white),
+            ),
+            confirmDismiss: (direction) async {
+              return await _confirmDelete(context, invoice.invoiceNumber);
+            },
+            onDismissed: (direction) {
+              _deleteInvoice(context, invoice.invoiceNumber);
+            },
+            child: Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap:
+                    () => _loadInvoiceDetails(context, invoice.invoiceNumber),
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '#${invoice.invoiceNumber}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.blue[700],
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green[50],
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '${invoice.grandTotal} ر.س',
+                                  style: TextStyle(
+                                    color: Colors.green[800],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      return Center(
+        child: Text(
+          'حدث خطأ في جلب الفواتير',
+          style: TextStyle(color: Colors.red),
+        ),
+      );
+    }
+  }
+
+  Future<void> _loadInvoiceDetails(
+    BuildContext context,
+    String invoiceName,
+  ) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(child: CircularProgressIndicator()),
+      );
+
+      final detailedInvoice = await SalesInvoice.getSalesInvoiceByName(
+        invoiceName,
+      );
+      // print(detailedInvoice);
+      // print('''
+      // === معلومات الفاتورة ===
+      // الرقم: ${detailedInvoice['name']}
+      // العميل: ${detailedInvoice['customer_name']}
+      // الشركة: ${detailedInvoice['company']}
+      // التاريخ: ${detailedInvoice['posting_date']}
+      // الحالة: ${detailedInvoice['docstatus'] == 0 ? 'مسودة' : 'مؤكدة'}
+      // تم الإنشاء بواسطة: ${detailedInvoice['owner']}
+      // آخر تعديل: ${detailedInvoice['modified_by']} في ${detailedInvoice['modified']}
+      // ${detailedInvoice['items']}
+      // ''');
+      setState(() {
+        invoDraftName = detailedInvoice['name'];
+        print('''الرقم: ${detailedInvoice['name']}''');
+        selectedCustomer = Customer(
+          name: detailedInvoice['customer_name'],
+          customerName: detailedInvoice['customer_name'],
+          customerGroup: '',
+        );
+        final List<dynamic> rawItems = detailedInvoice['items'] ?? [];
+        cartItems =
+            rawItems.whereType<Map<String, dynamic>>().map((item) {
+              return {
+                'id': item['name'],
+                'name': item['item_code']?.toString() ?? '',
+                'item_name': item['item_name']?.toString(),
+                'price': (item['rate'] ?? item['price'] ?? 0.0) as double,
+                'quantity': (item['qty'] as num).toInt() * -1,
+                'uom': item['uom']?.toString(),
+                'additionalUOMs': item['additionalUOMs'],
+                'discount_amount': (item['discount_amount'] ?? 0.0) as double,
+                'discount_percentage':
+                    (item['discount_percentage'] ?? 0.0) as double,
+                'cost_center': item['cost_center']?.toString(),
+                'income_account': item['income_account'],
+              };
+            }).toList();
+        total = calculateTotal();
+      });
+
+      Navigator.pop(context);
+      Navigator.pop(context);
+      MessageService.showSuccess(context, "تم  تحميل بيانات الفاتورة ");
+    } catch (e) {
+      Navigator.pop(context);
+      print(e.toString());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحميل الفاتورة: ${e.toString()}')),
+      );
+    }
+  }
+
+  Future<bool> _confirmDelete(
+    BuildContext context,
+    String invoiceNumber,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('تأكيد الحذف'),
+            content: Text(
+              'هل أنت متأكد من حذف الفاتورة #$invoiceNumber؟ لا يمكن التراجع عن هذا الإجراء.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await _deleteInvoice(context, invoiceNumber);
+                  Navigator.pop(context, false);
+                },
+                child: Text('إلغاء'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('حذف', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+    );
+
+    return confirmed ?? false;
+  }
+
+  Future<void> _deleteInvoice(
+    BuildContext context,
+    String invoiceNumber,
+  ) async {
+    try {
+      final success = await SalesInvoice.deleteInvoice(invoiceNumber);
+      if (success) {
+        MessageService.showSuccess(context, "تم حذف الفاتورة المعلقة بنجاح");
+        setState(() {});
+      }
+    } catch (e) {
+      MessageService.showWarning(context, "لم يتم حذف الفاتورة المعلقة ");
+    }
   }
 }
 

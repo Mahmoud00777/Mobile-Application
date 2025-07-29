@@ -9,6 +9,7 @@ class Item {
   final double discount_amount;
   final double discount_percentage;
   final List<Map<String, dynamic>> additionalUOMs;
+  final List<Map<String, dynamic>>? Item_Default;
   final String? imageUrl;
 
   Item({
@@ -23,6 +24,7 @@ class Item {
     required this.rate,
     required this.additionalUOMs,
     this.imageUrl,
+    this.Item_Default,
   });
 
   factory Item.fromJson(Map<String, dynamic> json) {
@@ -48,6 +50,9 @@ class Item {
         rate: rate,
         additionalUOMs:
             (json['additional_uoms'] as List?)?.cast<Map<String, dynamic>>() ??
+            [],
+        Item_Default:
+            (json['item_defaults'] as List?)?.cast<Map<String, dynamic>>() ??
             [],
         imageUrl: json['image'],
         discount_amount: 0.0,
@@ -84,5 +89,23 @@ class Item {
       'discount_amount': discount_amount,
       'discount_percentage': discount_percentage,
     };
+  }
+
+  /// إنشاء نسخة جديدة من Item مع تحديث الكمية
+  Item copyWith({double? qty}) {
+    return Item(
+      name: name,
+      itemName: itemName,
+      itemGroup: itemGroup,
+      uom: uom,
+      qty: qty ?? this.qty,
+      description: description,
+      rate: rate,
+      additionalUOMs: additionalUOMs,
+      Item_Default: Item_Default,
+      imageUrl: imageUrl,
+      discount_amount: discount_amount,
+      discount_percentage: discount_percentage,
+    );
   }
 }

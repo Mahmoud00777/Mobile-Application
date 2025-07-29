@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:ui';
 
 class HomePage extends StatefulWidget {
   final bool showLoginSuccess;
@@ -57,6 +58,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
   String? time;
   final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
   bool? hasInternet;
+
+  final Map<int, bool> _pressedStates = {};
 
   @override
   void initState() {
@@ -163,6 +166,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
     try {
       final closingData = await _getClosingData();
 
+      // ✅ إعادة تعيين _isClosingShift إلى false عند ظهور شاشة التأكيد
+      setState(() {
+        _isClosingShift = false;
+      });
+
       final confirmed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -184,27 +192,22 @@ class _HomePageState extends State<HomePage> with RouteAware {
       );
 
       if (confirmed == true) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder:
-              (context) => const Center(child: CircularProgressIndicator()),
-        );
+        // ✅ إعادة تعيين _isClosingShift إلى true عند بدء عملية الإغلاق
+        setState(() {
+          _isClosingShift = true;
+        });
+        
+        // ✅ إظهار Loading Overlay فقط عند التأكيد (العمليات الطويلة)
+        _showLoadingOverlay();
 
         try {
-          final cashAmount = await _getCurrentCashAmount();
-          await PosService.createClosingEntry(cashAmount, selectedPOSProfile!);
+          await PosService.createClosingEntry(0.0, selectedPOSProfile!);
 
           if (mounted) {
             Navigator.pop(context);
             await _executeClosing();
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('تم إغلاق الوردية بنجاح'),
-                backgroundColor: Colors.green,
-              ),
-            );
+            MessageService.showSuccess(context, 'تم إغلاق الوردية بنجاح');
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const PosOpeningPage()),
@@ -212,11 +215,9 @@ class _HomePageState extends State<HomePage> with RouteAware {
           }
         } catch (e) {
           if (mounted) Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('فشل في إغلاق الوردية: ${e.toString()}'),
-              backgroundColor: Colors.red,
-            ),
+          MessageService.showError(
+            context,
+            'فشل في إغلاق الوردية: ${e.toString()}',
           );
         }
       } else if (confirmed != true) {
@@ -226,17 +227,98 @@ class _HomePageState extends State<HomePage> with RouteAware {
         return;
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('خطأ في تحضير بيانات الإغلاق: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
+      setState(() {
+        _isClosingShift = false;
+      });
+      MessageService.showError(
+        context,
+        'خطأ في تحضير بيانات الإغلاق: ${e.toString()}',
       );
     }
   }
 
+  void _showLoadingOverlay() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => BackdropFilter(
+            // ✅ تأثير الضباب في الخلفية
+            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+            child: Dialog(
+              backgroundColor: Colors.transparent,
+              child: Container(
+                padding: EdgeInsets.all(30),
+                decoration: BoxDecoration(
+                  // ✅ خلفية متدرجة جميلة
+                  gradient: LinearGradient(
+                    colors: [primaryColor.withOpacity(0.9), primaryColor],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(25),
+                  // ✅ ظل جميل
+                  boxShadow: [
+                    BoxShadow(
+                      color: primaryColor.withOpacity(0.3),
+                      blurRadius: 20,
+                      spreadRadius: 5,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ✅ أيقونة متحركة
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      duration: Duration(seconds: 2),
+                      builder: (context, value, child) {
+                        return Transform.rotate(
+                          angle: value * 2 * 3.14159,
+                          child: Icon(
+                            Icons.lock_clock,
+                            size: 50,
+                            color: Colors.white,
+                          ),
+                        );
+                      },
+                    ),
+                    SizedBox(height: 25),
+                    Text(
+                      'إغلاق الوردية',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(height: 15),
+                    Text(
+                      'جاري تجهيز البيانات...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                    ),
+                    SizedBox(height: 20),
+                    // ✅ شريط تقدم
+                    LinearProgressIndicator(
+                      backgroundColor: Colors.white.withOpacity(0.3),
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+    );
+  }
+
   Widget _buildClosingSummary(Map<String, dynamic> data) {
     final paymentMethods = <String, double>{};
+
+    // جمع من مدفوعات منفصلة (Payment Entry)
     for (final payment in data['entry']) {
       final method = payment['mode_of_payment'] ?? 'غير محدد';
       final amount = (payment['paid_amount'] as num).toDouble();
@@ -246,12 +328,24 @@ class _HomePageState extends State<HomePage> with RouteAware {
         ifAbsent: () => amount,
       );
     }
+
+    // جمع من طرق دفع في الفواتير
+    for (final payment in data['payments']) {
+      final method = payment['method'] ?? 'غير محدد';
+      final amount = (payment['amount'] as num).toDouble();
+      paymentMethods.update(
+        method,
+        (value) => value + amount,
+        ifAbsent: () => amount,
+      );
+    }
+
     final totalSales = data['total_sales'] ?? 0.0;
     final totalPayments = paymentMethods.values.fold(
       0.0,
       (sum, amount) => sum + amount,
     );
-    final grandTotal = totalSales + totalPayments;
+    final grandTotal = totalPayments;
     return SingleChildScrollView(
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -284,29 +378,10 @@ class _HomePageState extends State<HomePage> with RouteAware {
                 ),
               ],
             ),
-            _buildSummaryCard(
-              title: 'المدفوعات',
-              children: [
-                ...paymentMethods.entries.map(
-                  (entry) =>
-                      _buildSummaryRow(entry.key, _formatCurrency(entry.value)),
-                ),
-                const Divider(height: 20),
-                _buildSummaryRow(
-                  'إجمالي',
-                  _formatCurrency(
-                    paymentMethods.values.fold(
-                      0.0,
-                      (sum, amount) => sum + amount,
-                    ),
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 16),
 
             Text(
-              'الدفع في فواتير',
+              'طرق الدفع',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -334,14 +409,14 @@ class _HomePageState extends State<HomePage> with RouteAware {
                     ),
                   ],
                   rows:
-                      data['payments'].map<DataRow>((payment) {
+                      paymentMethods.entries.map<DataRow>((entry) {
                         return DataRow(
                           cells: [
                             DataCell(
                               SizedBox(
                                 width: 100,
                                 child: Text(
-                                  payment['method'],
+                                  entry.key,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -350,7 +425,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
                               SizedBox(
                                 width: 100,
                                 child: Text(
-                                  _formatCurrency(payment['amount']),
+                                  _formatCurrency(entry.value),
                                   textAlign: TextAlign.start,
                                 ),
                               ),
@@ -450,6 +525,17 @@ class _HomePageState extends State<HomePage> with RouteAware {
   }
 
   Future<Map<String, dynamic>> _getClosingData() async {
+    final hasOpen = await PosService.hasOpenPosEntry();
+    print('hasOpen: $hasOpen');
+
+    if (hasOpen == false) {
+      MessageService.showWarning(context, 'لا يوجد وردية مفتوحة');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const PosOpeningPage()),
+      );
+    }
+
     if (selectedPOSProfile == null) {
       throw Exception('لا يوجد وردية مفتوحة');
     }
@@ -496,46 +582,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
       print('Error formatting currency: $e');
       return 'د.ل‏ 0.00';
     }
-  }
-
-  Future<double> _getCurrentCashAmount() async {
-    final controller = TextEditingController();
-
-    return await showDialog<double>(
-          context: context,
-          barrierDismissible: false,
-          builder:
-              (context) => AlertDialog(
-                title: const Text('إدخال المبلغ النقدي'),
-                content: TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'المبلغ النقدي المغلق',
-                    hintText: '0.00',
-                  ),
-                  onChanged: (value) {
-                    if (value.isEmpty || double.tryParse(value) == null) {
-                      return;
-                    }
-                  },
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, 0.0),
-                    child: const Text('إلغاء'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      final value = double.tryParse(controller.text) ?? 0.0;
-                      Navigator.pop(context, value);
-                    },
-                    child: const Text('تأكيد'),
-                  ),
-                ],
-              ),
-        ) ??
-        0.0;
   }
 
   @override
@@ -586,7 +632,6 @@ class _HomePageState extends State<HomePage> with RouteAware {
         },
         child: Stack(
           children: [
-            // محتوى الشاشة الرئيسي (الكروت، الداشبورد ...)
             Positioned.fill(
               child: SingleChildScrollView(
                 child: Padding(
@@ -630,7 +675,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
                         itemCount: buttons.length,
                         itemBuilder:
                             (context, index) =>
-                                _buildButton(buttons[index], context),
+                                _buildButton(buttons[index], index, context),
                       ),
                       const SizedBox(height: 20), // Added extra space at bottom
                     ],
@@ -688,79 +733,107 @@ class _HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
-  Widget _buildButton(Map<String, dynamic> button, BuildContext context) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: secondaryColor,
-        padding: const EdgeInsets.all(20),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15),
-          side: BorderSide(color: primaryColor, width: 2),
-        ),
-        overlayColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.pressed)
-              ? blackColor.withOpacity(0.1)
-              : Colors.transparent;
-        }),
-        elevation: 8,
-        shadowColor: Colors.black.withOpacity(0.3),
-      ),
-      onPressed: () async {
-        final navigator = Navigator.of(context);
-        Widget? targetScreen;
+  Widget _buildButton(
+    Map<String, dynamic> button,
+    int index,
+    BuildContext context,
+  ) {
+    bool isPressed = _pressedStates[index] ?? false;
 
-        switch (button['label']) {
-          case 'سجل الزيارة':
-            targetScreen = const VisitScreen();
-            break;
-          case 'طلبات المواد':
-            targetScreen = const MaterialRequestScreen();
-            break;
-          case 'نقطة البيع':
-            if (!await checkPosProfileHasPriceListAndWarehouse(context)) return;
-            targetScreen = const POSScreen();
-            break;
-          case 'المدفوعات والديون':
-            targetScreen = const PaymentEntryListPage();
-            break;
-          case 'الإرجاعات':
-            if (!await checkPosProfileHasPriceListAndWarehouse(context)) return;
-            targetScreen = const POSReturnScreen();
-            break;
-          case 'STORE':
-            targetScreen = const MaterialStoreScreen();
-            break;
-          case 'التقارير':
-            targetScreen = ReportsScreen();
-            break;
-          default:
-            print('${button['label']} pressed');
-            return;
-        }
-
-        await navigator.push(
-          MaterialPageRoute(builder: (context) => targetScreen!),
-        );
-
-        if (mounted) {
-          await _loadStatistics();
-        }
-      },
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(button['icon'] as IconData, size: 40, color: blackColor),
-          const SizedBox(height: 10),
-          Text(
-            button['label'] as String,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: blackColor,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 150),
+      transform: Matrix4.identity()..scale(isPressed ? 1.1 : 1.0),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: secondaryColor,
+          padding: const EdgeInsets.all(20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+            side: BorderSide(color: primaryColor, width: 2),
           ),
-        ],
+          overlayColor: WidgetStateColor.resolveWith((states) {
+            return states.contains(WidgetState.pressed)
+                ? blackColor.withOpacity(0.1)
+                : Colors.transparent;
+          }),
+          elevation: 8,
+          shadowColor: Colors.black.withOpacity(0.3),
+        ),
+        onPressed: () async {
+          _pulseButton(index); // إضافة تأثير النبض
+
+          final navigator = Navigator.of(context);
+          Widget? targetScreen;
+
+          switch (button['label']) {
+            case 'سجل الزيارة':
+              if (!await checkPosProfileHasPriceListAndWarehouse(context)) {
+                return;
+              }
+              targetScreen = const VisitScreen();
+              break;
+            case 'طلبات المواد':
+              if (!await checkPosProfileHasPriceListAndWarehouse(context)) {
+                return;
+              }
+              targetScreen = const MaterialRequestScreen();
+              break;
+            case 'نقطة البيع':
+              if (!await checkPosProfileHasPriceListAndWarehouse(context)) {
+                return;
+              }
+              targetScreen = const POSScreen();
+              break;
+            case 'المدفوعات والديون':
+              if (!await checkPosProfileHasPriceListAndWarehouse(context)) {
+                return;
+              }
+              targetScreen = const PaymentEntryListPage();
+              break;
+            case 'الإرجاعات':
+              if (!await checkPosProfileHasPriceListAndWarehouse(context)) {
+                return;
+              }
+              targetScreen = const POSReturnScreen();
+              break;
+            case 'STORE':
+              targetScreen = const MaterialStoreScreen();
+              break;
+            case 'التقارير':
+              if (!await checkPosProfileHasPriceListAndWarehouse(context)) {
+                return;
+              }
+              targetScreen = ReportsScreen();
+              break;
+            default:
+              print('${button['label']} pressed');
+              return;
+          }
+
+          await navigator.push(
+            MaterialPageRoute(builder: (context) => targetScreen!),
+          );
+
+          if (mounted) {
+            await _loadStatistics();
+          }
+        },
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(button['icon'] as IconData, size: 40, color: blackColor),
+            const SizedBox(height: 10),
+            Text(
+              button['label'] as String,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: blackColor,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -920,6 +993,20 @@ class _HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
+  void _pulseButton(int index) {
+    setState(() {
+      _pressedStates[index] = true;
+    });
+
+    Future.delayed(Duration(milliseconds: 150), () {
+      if (mounted) {
+        setState(() {
+          _pressedStates[index] = false;
+        });
+      }
+    });
+  }
+
   String formatTime(String isoTime) {
     try {
       final dateTime = DateTime.parse(isoTime);
@@ -938,6 +1025,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
         connectivityResult.first == ConnectivityResult.ethernet) {
       realInternet = await _checkRealInternet();
     }
+
     setState(() {
       hasInternet = realInternet;
     });
@@ -960,6 +1048,16 @@ class _HomePageState extends State<HomePage> with RouteAware {
   ) async {
     final prefs = await SharedPreferences.getInstance();
     final posProfileJson = prefs.getString('selected_pos_profile');
+    final checkOpenEntry = await PosService.checkStateOpenEntry();
+    print('checkOpenEntry: $checkOpenEntry');
+    if (checkOpenEntry == false) {
+      MessageService.showWarning(context, 'الوردية مغلقة!');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const PosOpeningPage()),
+      );
+      return false;
+    }
     if (posProfileJson == null) {
       MessageService.showWarning(context, 'لم يتم إعداد POS Profile بعد!');
       return false;

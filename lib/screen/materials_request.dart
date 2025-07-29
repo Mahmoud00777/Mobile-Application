@@ -5,7 +5,7 @@ import 'package:drsaf/Class/message_service.dart';
 import 'package:drsaf/services/pos_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/item.dart';
+import '../models/Item.dart';
 import '../models/materials_requestM.dart';
 import '../models/warehouse.dart';
 import '../services/item_service.dart';
@@ -42,7 +42,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   String selectedReason = 'تحويل المواد';
 
   List<Map<String, dynamic>> cartItems = [];
-  bool hasInternet = false;
+  bool? hasInternet;
 
   static const Map<String, String> statusLabels = {
     'Pending': 'قيد الانتظار',
@@ -51,7 +51,8 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
     'Cancelled': 'ملغى',
   };
   String? selectedStatus;
-  List<MaterialRequest> allRequests = []; // يجب تعبئتها من السيرفر
+  List<MaterialRequest> allRequests = [];
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -64,7 +65,6 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
     if (hasInternet == true) {
       try {
         await PosService.fetchAndUpdatePosProfile();
-        await _loadData();
       } catch (e) {
         print('تعذر تحديث POS Profile من السيرفر: $e');
       }
@@ -82,6 +82,9 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
     setState(() {
       hasInternet = realInternet;
     });
+    if (hasInternet == true) {
+      _loadData();
+    }
   }
 
   Future<bool> checkRealInternet() async {
@@ -95,12 +98,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
 
   Future<void> _loadData() async {
     try {
-      final items = await ItemService.getItems(
-        priceList: 'البيع القياسية',
-        includePrices: false,
-        includeStock: false,
-        includeUOMs: true,
-      );
+      final items = await ItemService.getItemsForMaterialRequest();
 
       final prefs = await SharedPreferences.getInstance();
       final posProfileJson = prefs.getString('selected_pos_profile');
@@ -208,6 +206,8 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
     }
     print(selectedItems);
     try {
+      await Future.delayed(Duration(milliseconds: 2000));
+
       final request = MaterialRequest(
         reason: selectedReason,
         scheduleDate: scheduleDate!.toIso8601String(),
@@ -236,7 +236,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
       MessageService.showSuccess(context, 'تم إرسال طلب المواد بنجاح');
 
       Navigator.pop(context, true);
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     } catch (e) {
       print(e);
       MessageService.showError(context, 'خطأ أثناء الإرسال: $e');
@@ -244,104 +244,113 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   }
 
   Widget _buildRequestInfoCard() {
-    return SafeArea(
-      child: Card(
-        elevation: 2,
-        margin: const EdgeInsets.all(12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: primaryColor, width: 1),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Text(
-                'معلومات الطلب الأساسية',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedReason,
-                items:
-                    requestReasons.map((reason) {
-                      return DropdownMenuItem(
-                        value: reason,
-                        child: Text(reason),
+    return StatefulBuilder(
+      builder: (context, setModalState) {
+        return SafeArea(
+          child: Card(
+            elevation: 2,
+            margin: const EdgeInsets.all(12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: primaryColor, width: 1),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Text(
+                    'معلومات الطلب الأساسية',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: primaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedReason,
+                    items:
+                        requestReasons.map((reason) {
+                          return DropdownMenuItem(
+                            value: reason,
+                            child: Text(reason),
+                          );
+                        }).toList(),
+                    onChanged: null, // غير نشط بوضوح
+                    decoration: InputDecoration(
+                      labelText: 'سبب الطلب',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      prefixIcon: const Icon(Icons.receipt),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime.now().subtract(
+                          const Duration(days: 1),
+                        ),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
                       );
-                    }).toList(),
-                onChanged: null, // غير نشط بوضوح
-                decoration: InputDecoration(
-                  labelText: 'سبب الطلب',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                  prefixIcon: const Icon(Icons.receipt),
-                ),
-              ),
-              const SizedBox(height: 16),
-              InkWell(
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime.now().subtract(const Duration(days: 1)),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (picked != null) {
-                    setState(() => scheduleDate = picked);
-                  }
-                },
-                child: InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'تاريخ المطلوب',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      if (picked != null) {
+                        setModalState(() => scheduleDate = picked);
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'تاريخ المطلوب',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                        prefixIcon: const Icon(Icons.calendar_today),
+                      ),
+                      child: Text(
+                        scheduleDate == null
+                            ? 'اختر التاريخ'
+                            : '${scheduleDate!.day}/${scheduleDate!.month}/${scheduleDate!.year}',
+                        style: const TextStyle(fontSize: 16),
+                      ),
                     ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                    prefixIcon: const Icon(Icons.calendar_today),
                   ),
-                  child: Text(
-                    scheduleDate == null
-                        ? 'اختر التاريخ'
-                        : '${scheduleDate!.day}/${scheduleDate!.month}/${scheduleDate!.year}',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              AbsorbPointer(
-                absorbing: true,
-                child: DropdownButtonFormField<Warehouse>(
-                  value: selectedWarehouse,
-                  items:
-                      availableWarehouses.map((w) {
-                        return DropdownMenuItem(value: w, child: Text(w.name));
-                      }).toList(),
-                  onChanged: null,
-                  decoration: InputDecoration(
-                    labelText: 'المخزن المستهدف',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                  const SizedBox(height: 16),
+                  AbsorbPointer(
+                    absorbing: true,
+                    child: DropdownButtonFormField<Warehouse>(
+                      value: selectedWarehouse,
+                      items:
+                          availableWarehouses.map((w) {
+                            return DropdownMenuItem(
+                              value: w,
+                              child: Text(w.name),
+                            );
+                          }).toList(),
+                      onChanged: null,
+                      decoration: InputDecoration(
+                        labelText: 'المخزن المستهدف',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[200],
+                        prefixIcon: const Icon(Icons.warehouse),
+                        suffixIcon: const Icon(Icons.lock),
+                      ),
                     ),
-                    filled: true,
-                    fillColor: Colors.grey[200],
-                    prefixIcon: const Icon(Icons.warehouse),
-                    suffixIcon: const Icon(Icons.lock),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -413,186 +422,281 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
     );
   }
 
+  int calculateTotalQuantity() {
+    return selectedItems.fold(
+      0,
+      (sum, item) => sum + (item['quantity'] as int),
+    );
+  }
+
   Widget _buildSelectedItemsSheet(
     BuildContext context,
     ScrollController scrollController,
   ) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 10,
-            offset: const Offset(0, -3),
+    return StatefulBuilder(
+      builder: (context, setModalState) {
+        // دالة لتحديث السلة
+        void updateCart() {
+          setModalState(() {});
+          setState(() {});
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 10,
+                offset: const Offset(0, -3),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              width: 40,
-              height: 5,
-              decoration: BoxDecoration(
-                color: primaryColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'سلة الطلبات',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          child: SafeArea(
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: primaryColor,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  Text(
-                    '${selectedItems.length} أصناف',
-                    style: TextStyle(
-                      color: primaryColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
+                ),
 
-            Expanded(
-              child:
-                  selectedItems.isEmpty
-                      ? const Center(
-                        child: Text(
-                          'لا توجد أصناف مضافة',
-                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'سلة الطلبات',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
-                      )
-                      : ListView.builder(
-                        controller: scrollController,
-                        itemCount: selectedItems.length,
-                        itemBuilder: (context, index) {
-                          final item = selectedItems[index];
-                          return SafeArea(
-                            child: Card(
-                              margin: const EdgeInsets.symmetric(
-                                vertical: 4,
-                                horizontal: 8,
+                      ),
+                      Row(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green[50],
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.inventory_2,
+                                  size: 16,
+                                  color: Colors.green[700],
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  '${calculateTotalQuantity()}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            '${selectedItems.length} أصناف',
+                            style: TextStyle(
+                              color: primaryColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                Expanded(
+                  child:
+                      selectedItems.isEmpty
+                          ? const Center(
+                            child: Text(
+                              'لا توجد أصناف مضافة',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey,
                               ),
-                              elevation: 2,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap:
-                                    () =>
-                                        _showItemDetails(context, item, index),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: primaryColor.withOpacity(
-                                        0.2,
-                                      ),
-                                      child: Text(
-                                        '${item['quantity']}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: primaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                    title: Text('${item['item_name']}'),
-                                    subtitle: Text('${item['uom']}'),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.remove,
-                                            size: 20,
-                                          ),
-                                          onPressed: () {
-                                            setState(() {
-                                              if (item['quantity'] > 1) {
-                                                selectedItems[index]['quantity']--;
-                                              } else {
-                                                _removeItem(index);
-                                              }
-                                            });
+                            ),
+                          )
+                          : ListView.builder(
+                            controller: scrollController,
+                            itemCount: selectedItems.length,
+                            itemBuilder: (context, index) {
+                              final item = selectedItems[index];
+                              return SafeArea(
+                                child: Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                    horizontal: 8,
+                                  ),
+                                  elevation: 2,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap:
+                                        () => _showItemDetails(
+                                          context,
+                                          item,
+                                          index,
+                                          () {
+                                            setModalState(() {});
+                                            setState(() {});
                                           },
                                         ),
-
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                          ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: ListTile(
+                                        leading: CircleAvatar(
+                                          backgroundColor: primaryColor
+                                              .withOpacity(0.2),
                                           child: Text(
                                             '${item['quantity']}',
-                                            style: const TextStyle(
-                                              fontSize: 16,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: primaryColor,
                                             ),
                                           ),
                                         ),
+                                        title: Text('${item['item_name']}'),
+                                        subtitle: Text('${item['uom']}'),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.remove,
+                                                size: 20,
+                                              ),
+                                              onPressed: () {
+                                                setState(() {
+                                                  if (item['quantity'] > 1) {
+                                                    selectedItems[index]['quantity']--;
+                                                  } else {
+                                                    _removeItem(index);
+                                                  }
+                                                });
+                                                setModalState(() {});
+                                              },
+                                            ),
 
-                                        IconButton(
-                                          icon: const Icon(Icons.add, size: 20),
-                                          onPressed: () {
-                                            setState(() {
-                                              selectedItems[index]['quantity']++;
-                                            });
-                                          },
-                                        ),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                  ),
+                                              child: Text(
+                                                '${item['quantity']}',
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ),
 
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.delete,
-                                            color: Colors.red,
-                                          ),
-                                          onPressed: () => _removeItem(index),
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.add,
+                                                size: 20,
+                                              ),
+                                              onPressed: () {
+                                                setState(() {
+                                                  selectedItems[index]['quantity']++;
+                                                });
+                                                setModalState(() {});
+                                              },
+                                            ),
+
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.delete,
+                                                color: Colors.red,
+                                              ),
+                                              onPressed: () {
+                                                _removeItem(index);
+                                                setModalState(() {});
+                                              },
+                                            ),
+                                          ],
                                         ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ),
-                          );
-                        },
+                              );
+                            },
+                          ),
+                ),
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        minimumSize: const Size(double.infinity, 50),
                       ),
-            ),
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                  onPressed:
-                      selectedItems.isEmpty ? null : _saveMaterialRequest,
-                  child: const Text(
-                    'تأكيد الطلب',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      onPressed:
+                          (selectedItems.isEmpty || _isSubmitting)
+                              ? null
+                              : () async {
+                                setModalState(() {
+                                  _isSubmitting = true;
+                                });
+                                _saveMaterialRequest();
+                              },
+                      child:
+                          _isSubmitting
+                              ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                              : Text(
+                                'تأكيد الطلب',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // if (hasInternet == null) {
+    //   return Scaffold(body: Center(child: CircularProgressIndicator()));
+    // }
+
     if (hasInternet == false) {
       return Scaffold(
         appBar: AppBar(
@@ -684,26 +788,55 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
     }
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (context) {
-              return DraggableScrollableSheet(
-                expand: false,
-                maxChildSize: 0.9,
-                minChildSize: 0.4,
-                builder: (context, scrollController) {
-                  return _buildSelectedItemsSheet(context, scrollController);
+      floatingActionButton: Stack(
+        children: [
+          FloatingActionButton(
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (context) {
+                  return DraggableScrollableSheet(
+                    expand: false,
+                    maxChildSize: 0.9,
+                    minChildSize: 0.4,
+                    builder: (context, scrollController) {
+                      return _buildSelectedItemsSheet(
+                        context,
+                        scrollController,
+                      );
+                    },
+                  );
                 },
               );
             },
-          );
-        },
-        backgroundColor: Color(0xFF60B245),
-        child: Icon(Icons.shopping_cart, color: Color(0xffffffff)),
+            backgroundColor: Color(0xFF60B245),
+            child: Icon(Icons.shopping_cart, color: Color(0xffffffff)),
+          ),
+          if (selectedItems.isNotEmpty)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Container(
+                padding: EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                constraints: BoxConstraints(minWidth: 22, minHeight: 22),
+                child: Text(
+                  '${calculateTotalQuantity()}',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
       ),
 
       appBar: AppBar(
@@ -761,8 +894,9 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   Future<void> _showItemDetails(
     BuildContext context,
     dynamic item,
-    int index,
-  ) async {
+    int index, [
+    VoidCallback? onUpdate,
+  ]) async {
     if (index < 0 || index >= selectedItems.length) return;
 
     final itemData = selectedItems[index];
@@ -830,6 +964,8 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                         setModalState(() {
                           selectedItems[index]['quantity'] = qty > 0 ? qty : 1;
                         });
+                        setState(() {}); // تحديث السلة الرئيسية
+                        onUpdate?.call(); // تحديث السلة المفتوحة
                       },
                     ),
                     const SizedBox(height: 12),
@@ -849,6 +985,8 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                           currentSelectedUnit = newUnit!;
                           selectedItems[index]['uom'] = newUnit;
                         });
+                        setState(() {}); // تحديث السلة الرئيسية
+                        onUpdate?.call(); // تحديث السلة المفتوحة
                       },
                       decoration: const InputDecoration(
                         labelText: 'تغيير الوحدة',
@@ -864,6 +1002,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                         onPressed: () {
                           Navigator.pop(context);
                           setState(() {});
+                          onUpdate?.call(); // تحديث السلة المفتوحة
                         },
                         child: const Text('حفظ'),
                       ),

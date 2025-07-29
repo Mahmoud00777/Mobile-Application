@@ -12,13 +12,11 @@ class CustomerLedgerService {
     required String toDate,
   }) async {
     try {
-      // 1. جلب العملاء الموجودين في POS Profile
       final posCustomers = await getFilteredCustomers();
       if (posCustomers.isEmpty) {
         return [];
       }
 
-      // 2. تحضير الفلتر ليشمل فقط عملاء POS Profile
       final customerNames = posCustomers.map((c) => c.name).toList();
       print('************************$customerNames');
       final filters = json.encode({'company': company});

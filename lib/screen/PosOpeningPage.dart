@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:drsaf/Class/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:drsaf/services/pos_service.dart';
@@ -67,9 +68,7 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
 
   Future<void> _submitOpening() async {
     if (selectedPOSProfile == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('يرجى اختيار POS Profile')));
+      MessageService.showWarning(context, 'يرجى اختيار POS Profile');
       return;
     }
 

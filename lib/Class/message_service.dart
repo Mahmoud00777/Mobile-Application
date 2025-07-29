@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class MessageService {
   static void showTopMessage({
-    required BuildContext context, // إضافة context كمُعامل مطلوب
+    required BuildContext context,
     required String message,
     String? title,
     bool isSuccess = true,
@@ -10,13 +10,10 @@ class MessageService {
     bool showCloseButton = true,
   }) {
     late OverlayEntry overlayEntry;
-    // 1. الحصول على OverlayState من context
     final overlayState = Overlay.of(context);
 
-    // 2. حساب الموضع العلوي
     final topPosition = MediaQuery.of(context).padding.top + 20;
 
-    // 3. إنشاء OverlayEntry
     overlayEntry = OverlayEntry(
       builder:
           (context) => Positioned(

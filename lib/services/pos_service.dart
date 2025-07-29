@@ -34,6 +34,35 @@ class PosService {
     }
   }
 
+  static Future<bool> checkStateOpenEntry() async {
+    final prefs = await SharedPreferences.getInstance();
+    final posOpeningName = prefs.getString('pos_open');
+    try {
+      final res = await ApiClient.get(
+        '/api/resource/POS Opening Entry/$posOpeningName?fields=["status"]',
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body)['data'];
+        final status = data['status'];
+        print('status: $status');
+        if (status == 'Open') {
+          return true;
+        } else {
+          await prefs.remove('pos_open');
+          await prefs.remove('pos_time');
+          await prefs.remove('selected_pos_profile');
+          return false;
+        }
+      } else {
+        // await prefs.remove('pos_open');
+        return false;
+      }
+    } catch (e) {
+      // await prefs.remove('pos_open');
+      return false;
+    }
+  }
+
   static Future<void> createOpeningEntry(
     double cashAmount,
     Map<String, dynamic> posProfile,
@@ -268,29 +297,50 @@ class PosService {
       }
       print('posOpeningName === $posOpeningName');
 
-      final invoices = await _getShiftInvoices(posOpeningName);
-      final payment = await _getShiftPayment(posOpeningName);
-      final visits = await _getShiftVisit(posOpeningName);
-      // final salesReturn = await _getShiftReturnInvoices(posOpeningName);
+      final results = await Future.wait([
+        _getShiftInvoices(posOpeningName),
+        _getShiftPayment(posOpeningName),
+        _getShiftVisit(posOpeningName),
+        getPaymentMethodsWithPaidAmount(),
+      ]);
+
+      final invoices = results[0] as List<Map<String, dynamic>>;
+      final payment = results[1] as List<Map<String, dynamic>>;
+      final visits = results[2] as List<Map<String, dynamic>>;
+      final paymentSummary = results[3] as Map<String, dynamic>;
 
       print('عدد الفواتير في الوردية: ${invoices.length}');
       print('عدد مدفوعات في الوردية: ${payment.length}');
       print('عدد زيارات في الوردية: ${visits.length}');
 
       final now = DateTime.now().toIso8601String();
-      final payments = posProfile['payments'] as List<dynamic>? ?? [];
 
-      final balanceDetails =
-          payments.map((payment) {
-            final mop = payment['mode_of_payment'];
-            return {
-              'mode_of_payment': mop,
-              'closing_amount': mop == 'نقد' ? cashAmount : 0.0,
-              'opening_amount': 0.0,
-              'expected_amount': mop == 'نقد' ? cashAmount : 0.0,
-              'difference': 0.0,
-            };
-          }).toList();
+      final paymentMethods = paymentSummary['payment_methods'] as List;
+
+      final balanceDetails = <Map<String, dynamic>>[];
+      final paymentMethodsMap = <String, double>{};
+
+      for (final method in paymentMethods) {
+        final methodName = method['method'] as String;
+        final paidAmount = method['paid_amount'] as double;
+        paymentMethodsMap[methodName] = paidAmount;
+      }
+
+      for (final pay in payment) {
+        final method = pay['mode_of_payment']?.toString() ?? 'نقدي';
+        final amount = (pay['paid_amount'] as num).toDouble();
+        paymentMethodsMap[method] = (paymentMethodsMap[method] ?? 0.0) + amount;
+      }
+
+      for (final entry in paymentMethodsMap.entries) {
+        balanceDetails.add({
+          'mode_of_payment': entry.key,
+          'closing_amount': entry.value,
+          'opening_amount': 0.0,
+          'expected_amount': entry.value,
+          'difference': 0.0,
+        });
+      }
 
       final invoiceTransactions =
           invoices.map((invoice) {
@@ -340,11 +390,17 @@ class PosService {
         0.0,
         (sum, pay) => sum + (pay['paid_amount'] as num).toDouble(),
       );
+      final totalClosingAmount = balanceDetails.fold(
+        0.0,
+        (sum, detail) => sum + (detail['closing_amount'] as double),
+      );
+      print('مجموع closing_amount: $totalClosingAmount');
+      final sumPaidAmount = totalClosingAmount;
       // final sumReturns = salesReturn.fold(
       //   0.0,
       //   (sum, ret) => sum + (ret['grand_total'] as num).toDouble(),
       // );
-      final grandTotal = sumInvoices + sumPayments;
+      final grandTotal = sumInvoices;
       final posClosingData = {
         'pos_profile': posProfile['name'],
         'user': user,
@@ -356,6 +412,7 @@ class PosService {
         'custom_sales_invoce_transactions': invoiceTransactions,
         'custom_payment_transactions': paymentsTransactions,
         'custom_visit_transactions': visitTransactions,
+        'custom_paid_amount': sumPaidAmount,
         'grand_total': grandTotal,
         'net_total': grandTotal,
         'total_quantity': totalQty,
@@ -397,12 +454,14 @@ class PosService {
     String closingEntryName,
   ) async {
     try {
-      for (final invoice in invoices) {
-        await ApiClient.putJson(
+      final futures = invoices.map((invoice) async {
+        return await ApiClient.putJson(
           '/api/resource/Sales Invoice/${invoice['name']}',
           {'posa_pos_closing': closingEntryName},
         );
-      }
+      }).toList();
+
+      await Future.wait(futures);
     } catch (e) {
       print('Error updating invoices with closing entry: $e');
       throw Exception('فشل في تحديث الفواتير بإغلاق الوردية');
@@ -416,8 +475,8 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
-        '["status","in",["Paid","Partly Paid","Return"]]'
-        ']&fields=["name","posting_date","grand_total","customer","status","total_qty"]',
+        '["status","in",["Paid","Partly Paid","Return","Unpaid"]]'
+        ']&fields=["name","posting_date","grand_total","customer","status","total_qty","paid_amount"]',
       );
 
       if (response.statusCode == 200) {
@@ -460,7 +519,7 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Payment Entry?filters=['
         '["custom_pos_opening_shift","=","$posOpeningName"]'
-        ']&fields=["name","party_name","paid_amount"]',
+        ']&fields=["name","party_name","paid_amount","mode_of_payment"]',
       );
 
       if (response.statusCode == 200) {
@@ -588,8 +647,7 @@ class PosService {
 
       final paymentMap = <String, double>{};
 
-      // الخطوة 2: جلب تفاصيل كل فاتورة على حدة للحصول على payments
-      for (final invoice in invoices) {
+      final futures = invoices.map((invoice) async {
         final invoiceName = invoice['name'];
         final invoiceDetail = await ApiClient.get(
           '/api/resource/Sales Invoice/$invoiceName',
@@ -597,25 +655,32 @@ class PosService {
 
         if (invoiceDetail.statusCode == 200) {
           final invoiceData = jsonDecode(invoiceDetail.body)['data'];
+          final payments = <Map<String, dynamic>>[];
 
-          // الحالة 1: وجود جدول payments
-          if (invoiceData['payments'] != null &&
-              invoiceData['payments'] is List) {
-            final payments = List<Map<String, dynamic>>.from(
-              invoiceData['payments'],
-            );
-            for (final payment in payments) {
-              final method = payment['mode_of_payment']?.toString() ?? 'نقدي';
-              final amount = (payment['amount'] as num?)?.toDouble() ?? 0.0;
-              paymentMap[method] = (paymentMap[method] ?? 0) + amount;
-            }
+          if (invoiceData['payments'] != null && invoiceData['payments'] is List) {
+            payments.addAll(List<Map<String, dynamic>>.from(invoiceData['payments']));
           }
-          // الحالة 2: استخدام mode_of_payment الرئيسي
           else {
             final method = invoiceData['mode_of_payment']?.toString() ?? 'نقدي';
             final amount = (invoiceData['grand_total'] as num).toDouble();
-            paymentMap[method] = (paymentMap[method] ?? 0) + amount;
+            payments.add({
+              'mode_of_payment': method,
+              'amount': amount,
+            });
           }
+          
+          return payments;
+        }
+        return <Map<String, dynamic>>[];
+      }).toList();
+
+      final results = await Future.wait(futures);
+
+      for (final payments in results) {
+        for (final payment in payments) {
+          final method = payment['mode_of_payment']?.toString() ?? 'نقدي';
+          final amount = (payment['amount'] as num?)?.toDouble() ?? 0.0;
+          paymentMap[method] = (paymentMap[method] ?? 0) + amount;
         }
       }
 
@@ -637,7 +702,7 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
-        '["status","in",["Paid","Partly Paid","Return"]],'
+        '["status","in",["Paid","Partly Paid","Return","Unpaid"]],'
         '["docstatus","=",1]'
         ']&fields=["name","posting_date","grand_total","customer"]',
       );
@@ -851,5 +916,130 @@ class PosService {
     });
 
     return result;
+  }
+
+  static Future<Map<String, dynamic>> getPaymentMethodsWithPaidAmount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final posOpeningName = prefs.getString('pos_open');
+
+      if (posOpeningName == null) {
+        throw Exception('لا توجد وردية مفتوحة');
+      }
+
+      final invoicesResponse = await ApiClient.get(
+        '/api/resource/Sales Invoice?filters=['
+        '["custom_pos_open_shift","=","$posOpeningName"],'
+        '["docstatus","=",1],'
+        '["status","in",["Paid","Partly Paid"]]'
+        ']&fields=["name","grand_total","paid_amount"]',
+      );
+
+      if (invoicesResponse.statusCode != 200) {
+        throw Exception('فشل في جلب الفواتير');
+      }
+
+      final invoices = List<Map<String, dynamic>>.from(
+        jsonDecode(invoicesResponse.body)['data'] ?? [],
+      );
+
+      final paymentSummary = <String, Map<String, dynamic>>{};
+      double totalPaidAmount = 0.0;
+      double totalGrandTotal = 0.0;
+      int totalInvoicesWithPayments = 0;
+
+      for (final invoice in invoices) {
+        final invoiceName = invoice['name'];
+        final grandTotal = (invoice['grand_total'] as num).toDouble();
+        final paidAmount = (invoice['paid_amount'] as num).toDouble();
+        totalGrandTotal += grandTotal;
+
+        final detailResponse = await ApiClient.get(
+          '/api/resource/Sales Invoice/$invoiceName?fields=["payments"]',
+        );
+        if (detailResponse.statusCode != 200) continue;
+        final detailData = jsonDecode(detailResponse.body)['data'];
+        if (detailData['payments'] == null || detailData['payments'] is! List) {
+          continue;
+        }
+        final payments = List<Map<String, dynamic>>.from(
+          detailData['payments'],
+        );
+        if (payments.isEmpty) continue;
+        totalInvoicesWithPayments++;
+
+        for (final payment in payments) {
+          final method = payment['mode_of_payment']?.toString() ?? 'نقدي';
+          final amount = (payment['amount'] as num?)?.toDouble() ?? 0.0;
+
+          if (!paymentSummary.containsKey(method)) {
+            paymentSummary[method] = {
+              'method': method,
+              'total_amount': 0.0,
+              'paid_amount': 0.0,
+              'invoice_count': 0,
+              'invoices': <Map<String, dynamic>>[],
+            };
+          }
+
+          paymentSummary[method]!['total_amount'] =
+              (paymentSummary[method]!['total_amount'] as double) + amount;
+          paymentSummary[method]!['paid_amount'] =
+              (paymentSummary[method]!['paid_amount'] as double) + amount;
+          paymentSummary[method]!['invoice_count'] =
+              (paymentSummary[method]!['invoice_count'] as int) + 1;
+
+          (paymentSummary[method]!['invoices'] as List<Map<String, dynamic>>).add({
+            'invoice_number': invoiceName,
+            'amount': amount,
+            'payment_method': method,
+          });
+        }
+      }
+
+      totalPaidAmount = paymentSummary.values.fold(
+        0.0,
+        (sum, method) => sum + (method['paid_amount'] as double),
+      );
+
+      final paymentList = paymentSummary.values.toList();
+
+      for (final method in paymentList) {
+        method['percentage_of_total'] =
+            totalGrandTotal > 0
+                ? (method['total_amount'] as double) / totalGrandTotal * 100
+                : 0.0;
+        method['percentage_of_paid'] =
+            totalPaidAmount > 0
+                ? (method['paid_amount'] as double) / totalPaidAmount * 100
+                : 0.0;
+      }
+
+      paymentList.sort(
+        (a, b) =>
+            (b['paid_amount'] as double).compareTo(a['paid_amount'] as double),
+      );
+
+      final result = {
+        'payment_methods': paymentList,
+        'summary': {
+          'total_grand_total': totalGrandTotal,
+          'total_paid_amount': totalPaidAmount,
+          'total_invoices': invoices.length,
+          'invoices_with_payments': totalInvoicesWithPayments,
+          'payment_methods_count': paymentList.length,
+        },
+        'shift_name': posOpeningName,
+        'summary_date': DateTime.now().toIso8601String(),
+      };
+      print('نتيجة getPaymentMethodsWithPaidAmount:');
+      print(result);
+      return result;
+    } catch (e) {
+      print('حدث خطأ في getPaymentMethodsWithPaidAmount: $e');
+      throw Exception(
+        'حدث خطأ أثناء تجميع طرق الدفع مع المبالغ المدفوعة: ${e.toString()}',
+      );
+    }
   }
 }

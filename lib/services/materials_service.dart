@@ -18,7 +18,6 @@ class MaterialRequestService {
 
       print('إنشاء طلب مواد بحالة "مقدمة" مباشرة');
       print('بيانات الطلب المرسلة: ${request.toJson()}');
-      // 1. إنشاء الطلب كمسودة أولاً (docstatus=0)
       final createResponse = await ApiClient.postJson(
         '/api/resource/Material Request',
         {
@@ -27,7 +26,7 @@ class MaterialRequestService {
           'set_warehouse': request.warehouse,
           'reason': request.reason,
           'custom_pos_profile': posProfileName,
-          'docstatus': 0, // إنشاء كمسودة أولاً
+          'docstatus': 0,
           'items':
               items
                   .map(
@@ -138,18 +137,15 @@ class MaterialRequestService {
     try {
       print('بدأت عملية الموافقة على طلب المواد: $requestName');
 
-      // 1. جلب بيانات طلب المواد
       print('جاري جلب بيانات طلب المواد...');
       final request = await getMaterialRequestByName(requestName);
       print('تم جلب بيانات الطلب بنجاح. الحالة الحالية: ${request.status}');
 
-      // 2. التحقق من حالة الطلب
       if (request.status == 'Transferred') {
         print('تحذير: الطلب ${request.name} تم نقله مسبقاً');
         return {'success': false, 'error': 'تم نقل المواد مسبقاً'};
       }
 
-      // 3. تحضير قائمة الأصناف للنقل
       print('جاري تحضير الأصناف للنقل...');
       final List<Map<String, dynamic>> items =
           request.items.map((item) {
@@ -167,7 +163,6 @@ class MaterialRequestService {
           }).toList();
       print('تم تحضير ${items.length} صنف للنقل');
 
-      // 4. إنشاء سند النقل
       print('جاري إنشاء سند النقل...');
       final stockEntry = {
         'stock_entry_type': 'Material Transfer',
@@ -192,7 +187,6 @@ class MaterialRequestService {
       }
       print('تم إنشاء سند النقل بنجاح: ${stockEntryResult.body}');
 
-      // 5. تحديث حالة طلب المواد
       print('جاري تحديث حالة طلب المواد...');
       final materialRequest = {
         'status': 'Transferred',
@@ -214,7 +208,6 @@ class MaterialRequestService {
       }
       print('تم تحديث حالة الطلب بنجاح إلى Transferred');
 
-      // 6. إرجاع النتيجة النهائية
       print('تمت عملية الموافقة ونقل المواد بنجاح');
       return {
         'success': true,

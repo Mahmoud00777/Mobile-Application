@@ -5,13 +5,12 @@ import '../models/sales_invoice_summary.dart';
 import 'api_client.dart';
 
 class SalesInvoiceService {
-  /// Fetch Sales Invoices with optional customer search, return filter, and pagination.
   static Future<List<SalesInvoiceSummary>> fetchInvoices({
     required String company,
     required String fromDate,
     required String toDate,
     String? customer,
-    int? isReturn, // 1 for returns, 0 for non-returns
+    int? isReturn,
     int limitStart = 0,
     int limitPageLength = 20,
   }) async {

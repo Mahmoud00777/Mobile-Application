@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:drsaf/Class/message_service.dart';
+import 'package:drsaf/models/sales_invoice_summary.dart';
 import 'package:drsaf/services/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,7 +17,7 @@ import 'package:sunmi_printer_plus/core/types/sunmi_column.dart';
 import '../services/sales_invoice.dart';
 import '../services/item_service.dart';
 import '../services/customer_service.dart';
-import '../models/item.dart';
+import '../models/Item.dart';
 import '../models/customer.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/pos_service.dart';
@@ -41,6 +42,7 @@ class _POSScreenState extends State<POSScreen> {
   List<Customer> customers = [];
   List<String> itemGroups = [];
   String? selectedItemGroup;
+  String? invoDraftName;
   TextEditingController searchController = TextEditingController();
   final Color primaryColor = Color(0xFF60B245);
   final Color secondaryColor = Color(0xFFFFFFFF);
@@ -124,7 +126,7 @@ class _POSScreenState extends State<POSScreen> {
 
   Future<List<Item>> _loadProducts() async {
     itemGroups = await ItemService.getItemGroups();
-    final items = await ItemService.getItems();
+    final items = await ItemService.getItemsForPOS();
     final filteredItems =
         items.where((item) => itemGroups.contains(item.itemGroup)).toList();
     return filteredItems;
@@ -151,7 +153,7 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   void _handleError(dynamic error) {
-    if (hasInternet == false) return; // لا تغير رسالة الخطأ إذا لا يوجد اتصال
+    if (hasInternet == false) return;
     if (!mounted) return;
     setState(() {
       isLoading = false;
@@ -175,18 +177,15 @@ class _POSScreenState extends State<POSScreen> {
     setState(() {
       filteredProducts =
           products.where((product) {
-            // 1. مطابقة اسم المنتج مع نص البحث
             final matchesSearch =
                 product.itemName.toLowerCase().contains(searchTerm) ||
                 product.name.toLowerCase().contains(searchTerm);
 
-            // 2. مطابقة مجموعة المنتج (إذا تم تحديد مجموعة)
             final matchesGroup =
                 selectedItemGroup == null ||
                 selectedItemGroup!.isEmpty ||
                 product.itemGroup == selectedItemGroup;
 
-            // 3. يجب أن تطابق شروط البحث والمجموعة معاً
             return matchesSearch && matchesGroup;
           }).toList();
     });
@@ -194,11 +193,17 @@ class _POSScreenState extends State<POSScreen> {
 
   void _increaseQuantity(int index, [Function? setModalState]) {
     final availableQty = productQtyFromCartOrProducts(cartItems[index]);
-    if (cartItems[index]['quantity'] >= (availableQty ?? 0)) {
+    final currentQuantity = cartItems[index]['quantity'];
+    print(
+      "_increaseQuantity - current quantity: $currentQuantity, available: $availableQty",
+    );
+
+    // التحقق من أن الكمية الجديدة (الحالية + 1) لا تتجاوز الكمية المتاحة
+    if ((currentQuantity + 1) > (availableQty ?? 0)) {
       MessageService.showWarning(
         context,
-        "الكمية مطلوبة اكبر من كمية موجودة في مخزن",
-        title: "خطأ في كمية",
+        "الكمية المطلوبة أكبر من الكمية المتوفرة في المخزن (${availableQty?.toStringAsFixed(2) ?? 'غير معروف'})",
+        title: "خطأ في الكمية",
       );
       return;
     }
@@ -223,6 +228,18 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   void addToCart(Item product) {
+    final String? costCenter;
+    print("product => ${product.Item_Default}");
+    if (product.Item_Default != null) {
+      var firstItem = product.Item_Default?[0];
+      print("المستودع الافتراضي: ${firstItem?['default_warehouse']}");
+      print("حساب الإيرادات: ${firstItem?['income_account']}");
+      costCenter = firstItem?['selling_cost_center'];
+    } else {
+      costCenter = null;
+    }
+    print(costCenter);
+
     final existingIndex = cartItems.indexWhere(
       (item) => item['item_name'] == product.itemName,
     );
@@ -230,35 +247,68 @@ class _POSScreenState extends State<POSScreen> {
     if (existingIndex != -1) {
       currentCartQty = cartItems[existingIndex]['quantity'];
     }
-    final availableQty = product.qty;
+
+    // حساب الكمية المتاحة مع معامل التحويل
+    final selectedUOM = product.uom;
+    final conversionFactor = getConversionFactor(
+      product.additionalUOMs ?? [],
+      selectedUOM,
+    );
+    final availableQty = product.qty / conversionFactor;
+
+    print(
+      "product.qty: ${product.qty}, conversionFactor: $conversionFactor, availableQty: $availableQty",
+    );
+
+    print(
+      "addToCart - currentCartQty: $currentCartQty, availableQty: $availableQty",
+    );
     if (currentCartQty + 1 > availableQty) {
       MessageService.showWarning(
         context,
-        "الكمية المطلوبة أكبر من الكمية المتوفرة في المخزن ($availableQty)",
+        "الكمية المطلوبة أكبر من الكمية المتوفرة في المخزن (${availableQty.toStringAsFixed(2)})",
         title: "خطأ في الكمية",
       );
       return;
     }
     setState(() {
+      print("product.additionalUOMs =>${product.additionalUOMs}");
+      final selectedUOM = product.uom;
+      final conversionFactor = getConversionFactor(
+        product.additionalUOMs ?? [],
+        selectedUOM,
+      );
       if (existingIndex != -1) {
-        // إذا وجدنا العنصر، نزيد الكمية
         cartItems[existingIndex]['quantity'] += 1;
       } else {
-        // إذا لم نجده، نضيف عنصر جديد
         cartItems.add({
           'name': product.name,
           'item_name': product.itemName,
           'price': product.rate,
+          'original_price': product.rate,
+          'conversion_factor': conversionFactor,
           'quantity': 1,
           'uom': product.uom,
           'additionalUOMs': product.additionalUOMs,
           'discount_amount': product.discount_amount,
           'discount_percentage': product.discount_percentage,
+          'cost_center': costCenter,
         });
       }
-      // تحديث الإجمالي
       total += product.rate;
     });
+  }
+
+  double getConversionFactor(List<dynamic> additionalUOMs, String selectedUOM) {
+    try {
+      final uom = additionalUOMs.firstWhere(
+        (uom) => uom['uom'] == selectedUOM,
+        orElse: () => {'conversion_factor': 1.0},
+      );
+      return (uom['conversion_factor'] as num).toDouble();
+    } catch (e) {
+      return 1.0;
+    }
   }
 
   void removeFromCart(int index, [Function? setModalState]) {
@@ -274,6 +324,7 @@ class _POSScreenState extends State<POSScreen> {
       cartItems.clear();
       total = 0.0;
       selectedCustomer = null;
+      invoDraftName = null;
     });
     setModalState?.call(() {});
   }
@@ -353,17 +404,35 @@ class _POSScreenState extends State<POSScreen> {
     الخصم: ${discountAmount ?? discountPercentage} ${discountAmount != null ? 'د.ر' : '%'}
     الإجمالي بعد الخصم: $totalAfterDiscount
     ''');
-      print("cartItems: $cartItems");
-      final invoiceResult = await SalesInvoice.createSalesInvoice(
-        customer: selectedCustomer!,
-        items: cartItems,
-        total: totalAfterDiscount, // استخدام الإجمالي بعد الخصم
-        paymentMethod: paymentData,
-        paidAmount: paidAmount,
-        outstandingAmount: outstanding,
-        discountAmount: discountAmount,
-        discountPercentage: discountPercentage,
-      );
+
+      final Map<String, dynamic> invoiceResult;
+      print(invoDraftName);
+      if (invoDraftName == null) {
+        print("add");
+        invoiceResult = await SalesInvoice.createSalesInvoice(
+          customer: selectedCustomer!,
+          items: cartItems,
+          total: totalAfterDiscount,
+          paymentMethod: paymentData,
+          paidAmount: paidAmount,
+          outstandingAmount: outstanding,
+          discountAmount: discountAmount,
+          discountPercentage: discountPercentage,
+        );
+      } else {
+        print("update");
+        invoiceResult = await SalesInvoice.updateSalesInvoice(
+          customer: selectedCustomer!,
+          items: cartItems,
+          total: totalAfterDiscount,
+          paymentMethod: paymentData,
+          paidAmount: paidAmount,
+          outstandingAmount: outstanding,
+          discountAmount: discountAmount,
+          discountPercentage: discountPercentage,
+          invoName: invoDraftName,
+        );
+      }
 
       if (!invoiceResult['success']) {
         final errorMessage = invoiceResult['success'] ?? 'حدث خطأ غير معروف';
@@ -384,28 +453,79 @@ class _POSScreenState extends State<POSScreen> {
         );
         throw Exception(errorMessage);
       }
-      printTest(
+      print('=== DEBUG COMPLETE SALE ===');
+      print('cartItems before printTest: ${cartItems.length}');
+      print('cartItems content: $cartItems');
+      final cartItemsCopy = List<Map<String, dynamic>>.from(cartItems);
+      print('=== DEBUG CART COPY ===');
+      print('Original cartItems length: ${cartItems.length}');
+      print('Copied cartItems length: ${cartItemsCopy.length}');
+      print('Copied cartItems: $cartItemsCopy');
+      printSalesInvoice(
         selectedCustomer,
-        cartItems,
+        cartItemsCopy,
         invoiceResult['full_invoice']['name'],
         invoiceResult['customer_outstanding'],
       );
+      print('=== END DEBUG COMPLETE SALE ===');
+
+      // إغلاق الحوارات
+      Navigator.pop(context);
+      Navigator.pop(context);
+
+      // عرض رسالة النجاح
       MessageService.showSuccess(
         context,
         '${invoiceResult['full_invoice']['name']}تم إنشاء الفاتورة بنجاح',
       );
-      Navigator.pop(context);
-      Navigator.pop(context);
 
-      final updatedProducts = await ItemService.getItems();
+      final itemNames =
+          cartItems.map((item) => item['name'].toString()).toList();
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+      final posProfile = json.decode(posProfileJson!);
+      final warehouse = posProfile['warehouse'];
 
+      try {
+        final quantities = await ItemService.updateItemsQuantities(
+          itemNames: itemNames,
+          warehouse: warehouse,
+        );
+
+        for (int i = 0; i < products.length; i++) {
+          final itemName = products[i].name;
+          if (quantities.containsKey(itemName)) {
+            products[i] = products[i].copyWith(qty: quantities[itemName]!);
+          }
+        }
+
+        for (int i = 0; i < filteredProducts.length; i++) {
+          final itemName = filteredProducts[i].name;
+          if (quantities.containsKey(itemName)) {
+            filteredProducts[i] = filteredProducts[i].copyWith(
+              qty: quantities[itemName]!,
+            );
+          }
+        }
+      } catch (e) {
+        print('خطأ في تحديث الكميات: $e');
+        ItemService.clearCache();
+        final updatedProducts = await ItemService.getItems();
+        setState(() {
+          products = updatedProducts;
+          filteredProducts = updatedProducts;
+        });
+      }
+
+      print('=== DEBUG BEFORE CLEARING CART ===');
+      print('cartItems before clearing: ${cartItems.length}');
       setState(() {
-        products = updatedProducts;
-        filteredProducts = updatedProducts;
         cartItems.clear();
         total = 0.0;
         selectedCustomer = null;
+        invoDraftName = null;
       });
+      print('=== DEBUG AFTER CLEARING CART ===');
     } catch (e, stack) {
       Navigator.pop(context);
       print('خطأ في إتمام البيع: $e\n$stack');
@@ -450,14 +570,12 @@ class _POSScreenState extends State<POSScreen> {
                 invoiceDiscount = discountValue;
               }
 
-              // التأكد من عدم تجاوز الخصم للمبلغ الإجمالي
               if (invoiceDiscount > invoiceTotal) {
                 invoiceDiscount = invoiceTotal;
               }
 
               invoiceAfterDiscount = invoiceTotal - invoiceDiscount;
 
-              // تحديث المبلغ المدفوع ليتطابق مع المبلغ بعد الخصم
               if (paidAmount > invoiceAfterDiscount) {
                 paidAmount = invoiceAfterDiscount;
                 amountController.text = paidAmount.toStringAsFixed(2);
@@ -479,7 +597,6 @@ class _POSScreenState extends State<POSScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // طريقة الدفع
                     DropdownButtonFormField<String>(
                       value: selectedMethod,
                       items:
@@ -502,7 +619,6 @@ class _POSScreenState extends State<POSScreen> {
 
                     const SizedBox(height: 20),
 
-                    // قسم الخصم
                     Card(
                       elevation: 2,
                       child: Padding(
@@ -555,7 +671,6 @@ class _POSScreenState extends State<POSScreen> {
 
                     const SizedBox(height: 20),
 
-                    // المبلغ المدفوع
                     TextFormField(
                       controller: amountController,
                       keyboardType: TextInputType.number,
@@ -573,7 +688,6 @@ class _POSScreenState extends State<POSScreen> {
 
                     const SizedBox(height: 20),
 
-                    // ملخص الفاتورة
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -667,7 +781,6 @@ class _POSScreenState extends State<POSScreen> {
       padding: const EdgeInsets.all(8.0),
       child: Row(
         children: [
-          // أيقونة البحث
           Container(
             height: 50,
             width: 50,
@@ -679,14 +792,13 @@ class _POSScreenState extends State<POSScreen> {
               icon: Icon(Icons.search, color: primaryColor),
               tooltip: 'بحث عن منتج',
               onPressed: () {
-                _showSearchDialog(); // فتح مربع البحث الكامل
+                _showSearchDialog();
               },
             ),
           ),
 
           SizedBox(width: 10),
 
-          // Dropdown تصفية حسب المجموعة
           Expanded(
             child: DropdownButtonFormField<String>(
               value: selectedItemGroup,
@@ -746,11 +858,10 @@ class _POSScreenState extends State<POSScreen> {
                   hintText: 'ادخل اسم المنتج...',
                   leading: Icon(Icons.search),
                   onChanged: (value) {
-                    _filterProducts(); // فلترة مباشرة أثناء الكتابة
+                    _filterProducts();
                   },
                 ),
                 SizedBox(height: 10),
-                // يمكن إضافة نتائج مباشرة هنا لاحقًا إن أردت
               ],
             ),
           ),
@@ -793,7 +904,6 @@ class _POSScreenState extends State<POSScreen> {
                 ),
                 Row(
                   children: [
-                    // إجمالي الكميات
                     Container(
                       padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       decoration: BoxDecoration(
@@ -821,7 +931,6 @@ class _POSScreenState extends State<POSScreen> {
                       ),
                     ),
                     SizedBox(width: 8),
-                    // إجمالي السلة
                     Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: 12,
@@ -846,7 +955,6 @@ class _POSScreenState extends State<POSScreen> {
             ),
           ),
 
-          // قائمة العناصر مع تمرير Scroll داخل Expanded
           Expanded(
             child:
                 cartItems.isEmpty
@@ -914,7 +1022,6 @@ class _POSScreenState extends State<POSScreen> {
                                   ),
                                 ),
                               ),
-                              // لا تستخدم Expanded هنا — فقط Text عادي
                               title: Text(
                                 item['item_name'],
                                 style: TextStyle(
@@ -1120,7 +1227,7 @@ class _POSScreenState extends State<POSScreen> {
   ]) async {
     final item = cartItems[index];
     print("item: $item");
-    var originalPrice = item['original_price'] ?? item['price'];
+    double originalPrice = (item['original_price'] ?? item['price']) as double;
 
     final controllers = {
       'quantity': TextEditingController(text: item['quantity'].toString()),
@@ -1132,12 +1239,13 @@ class _POSScreenState extends State<POSScreen> {
       ),
     };
 
-    String selectedUnit = item['uom'] ?? item['stock_uom'] ?? 'وحدة';
+    String selectedUnit = item['uom'];
+    print('''selectedUnit ===>>>$selectedUnit''');
     String discountType =
         item['discount_amount'] != null ? 'amount' : 'percentage';
     bool isLoading = false;
 
-    Set<String> availableUnits = {item['stock_uom']?.toString() ?? 'وحدة'};
+    Set<String> availableUnits = {item['uom']?.toString() ?? 'وحدة'};
     if (item['additionalUOMs'] != null) {
       availableUnits.addAll(
         (item['additionalUOMs'] as List)
@@ -1145,8 +1253,8 @@ class _POSScreenState extends State<POSScreen> {
             .map((uom) => uom['uom'].toString()),
       );
     }
+    print('''availableUnits ===>>>$availableUnits''');
 
-    // تعريف selectedConversionFactor مرة واحدة فقط هنا
     double selectedConversionFactor = item['conversion_factor'] ?? 1.0;
 
     await showDialog(
@@ -1166,8 +1274,11 @@ class _POSScreenState extends State<POSScreen> {
               }
 
               if (newPrice < 0) newPrice = 0;
+              print("newPrice after discount ===>>$newPrice");
 
-              controllers['price']!.text = newPrice.toStringAsFixed(2);
+              final finalPrice = newPrice;
+              print("finalPrice after conversion ===>>$finalPrice");
+              controllers['price']!.text = finalPrice.toStringAsFixed(2);
             }
 
             Future<void> updatePriceForNewUnit(String? newUnit) async {
@@ -1177,9 +1288,7 @@ class _POSScreenState extends State<POSScreen> {
 
               try {
                 double factor = 1.0;
-                if (newUnit == (item['stock_uom'] ?? 'وحدة')) {
-                  factor = 1.0;
-                } else if (item['additionalUOMs'] != null) {
+                if (item['additionalUOMs'] != null) {
                   final uom = (item['additionalUOMs'] as List)
                       .cast<Map<String, dynamic>>()
                       .firstWhere(
@@ -1188,9 +1297,12 @@ class _POSScreenState extends State<POSScreen> {
                       );
                   factor =
                       (uom['conversion_factor'] as num?)?.toDouble() ?? 1.0;
+                  print("////////////////////////////");
                 }
                 print("conversion_factor for $newUnit: $factor");
-
+                print(
+                  "price ===>>${item['price']?.toString()} ${item['original_price']}",
+                );
                 final priceList =
                     await getPriceListFromPosProfile() ?? 'البيع القياسية';
                 final newPrice = await _getItemPriceForUnit(
@@ -1198,17 +1310,57 @@ class _POSScreenState extends State<POSScreen> {
                   newUnit,
                   priceList,
                 );
-
+                print("newPrice ===>>$newPrice");
                 setStateDialog(() {
                   selectedUnit = newUnit;
+                  selectedConversionFactor = factor;
+
+                  // تحديث السعر الأصلي بناءً على الوحدة الجديدة
+                  double basePrice;
                   if (newPrice != null) {
-                    originalPrice = newPrice;
+                    print("newPrice != null: $newPrice");
+                    basePrice = newPrice;
                   } else {
-                    originalPrice =
-                        (item['original_price'] ?? item['price']) * factor;
+                    print("newPrice == null, using original price");
+                    basePrice =
+                        (item['original_price'] ?? item['price']) as double;
                   }
-                  controllers['price']!.text = originalPrice.toStringAsFixed(2);
-                  selectedConversionFactor = factor; // تحديث المتغير هنا فقط
+
+                  // تحديث السعر الأصلي للاستخدام في حسابات الخصم
+                  originalPrice = basePrice;
+                  print("originalPrice updated to: $originalPrice");
+
+                  // تطبيق معامل التحويل
+                  final finalPrice = basePrice * selectedConversionFactor;
+                  controllers['price']!.text = finalPrice.toStringAsFixed(2);
+
+                  print(
+                    "selectedConversionFactor ===>>$selectedConversionFactor",
+                  );
+                  print("basePrice ===>>$basePrice");
+                  print("finalPrice ===>>$finalPrice");
+                  print(
+                    "controllers['price']!.text ===>>${controllers['price']!.text}",
+                  );
+
+                  // التحقق من الكمية المتاحة مع الوحدة الجديدة
+                  final currentQuantity =
+                      int.tryParse(controllers['quantity']!.text) ?? 1;
+                  final availableQty = productQtyFromCartOrProducts({
+                    ...item,
+                    'conversion_factor': selectedConversionFactor,
+                    'uom': selectedUnit,
+                  });
+
+                  if (availableQty != null && currentQuantity > availableQty) {
+                    print("Warning: Quantity exceeds available stock");
+                    print(
+                      "currentQuantity: $currentQuantity, availableQty: $availableQty",
+                    );
+                    // لا نعرض رسالة خطأ هنا لأن المستخدم قد يريد تعديل الكمية لاحقاً
+                  }
+
+                  // تطبيق الخصم إذا كان موجوداً
                   updatePrice();
                 });
               } catch (e) {
@@ -1224,8 +1376,6 @@ class _POSScreenState extends State<POSScreen> {
               }
             }
 
-            // دالة حساب السعر بعد الخصم
-
             void toggleDiscountType() {
               setStateDialog(() {
                 discountType =
@@ -1240,7 +1390,6 @@ class _POSScreenState extends State<POSScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // حقل الكمية
                     TextFormField(
                       controller: controllers['quantity'],
                       keyboardType: TextInputType.number,
@@ -1259,7 +1408,6 @@ class _POSScreenState extends State<POSScreen> {
 
                     const SizedBox(height: 16),
 
-                    // اختيار الوحدة
                     DropdownButtonFormField<String>(
                       value: selectedUnit,
                       items:
@@ -1279,7 +1427,6 @@ class _POSScreenState extends State<POSScreen> {
 
                     const SizedBox(height: 16),
 
-                    // قسم الخصم
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(12),
@@ -1331,7 +1478,6 @@ class _POSScreenState extends State<POSScreen> {
 
                     const SizedBox(height: 16),
 
-                    // عرض السعر النهائي
                     Stack(
                       alignment: Alignment.centerRight,
                       children: [
@@ -1379,12 +1525,14 @@ class _POSScreenState extends State<POSScreen> {
                     final discountValue =
                         double.tryParse(controllers['discount']!.text) ?? 0;
                     final availableQty = productQtyFromCartOrProducts(item);
-                    print(availableQty);
+                    print(
+                      "_showEditItemDialog - newQuantity: $newQuantity, availableQty: $availableQty",
+                    );
                     if (newQuantity > availableQty!) {
                       MessageService.showWarning(
                         context,
-                        "الكمية مطلوبة اكبر من كمية موجودة في مخزن",
-                        title: "خطأ في كمية",
+                        "الكمية المطلوبة أكبر من الكمية المتوفرة في المخزن (${availableQty.toStringAsFixed(2)})",
+                        title: "خطأ في الكمية",
                       );
                       return;
                     }
@@ -1402,8 +1550,7 @@ class _POSScreenState extends State<POSScreen> {
                         ...cartItems[index],
                         'quantity': newQuantity,
                         'uom': selectedUnit,
-                        'conversion_factor':
-                            selectedConversionFactor, // حفظ القيمة الصحيحة
+                        'conversion_factor': selectedConversionFactor,
                         'price': double.parse(controllers['price']!.text),
                         'original_price': originalPrice,
                         'discount_amount':
@@ -1669,100 +1816,227 @@ class _POSScreenState extends State<POSScreen> {
       return Center(child: Text(errorMessage));
     }
 
-    return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          showModalBottomSheet(
+    return WillPopScope(
+      onWillPop: () async {
+        if (cartItems.isNotEmpty) {
+          final shouldExit = await showDialog(
             context: context,
-            isScrollControlled: true,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            builder: (context) {
-              final screenHeight = MediaQuery.of(context).size.height;
-              return StatefulBuilder(
-                builder: (context, setModalState) {
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).viewInsets.bottom,
+            builder:
+                (context) => AlertDialog(
+                  title: Text('تحذير'),
+                  content: Text(
+                    'لديك عناصر في سلة التسوق. هل تريد الخروج دون حفظ؟',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: Text('إلغاء'),
                     ),
-                    child: SizedBox(
-                      height: screenHeight * 0.5,
-                      child: _buildCartSection(setModalState),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: Text('نعم، خروج'),
                     ),
+                  ],
+                ),
+          );
+          return shouldExit ?? false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        floatingActionButton: Stack(
+          children: [
+            Positioned(
+              bottom: 150,
+              right: 5,
+              child: FloatingActionButton(
+                onPressed: () async {
+                  HapticFeedback.lightImpact();
+                  await showModalBottomSheet(
+                    context: context,
+                    backgroundColor: Colors.transparent,
+                    barrierColor: Colors.black54,
+                    isDismissible: true,
+                    builder:
+                        (context) => DraggableScrollableSheet(
+                          initialChildSize: 0.6,
+                          minChildSize: 0.3,
+                          maxChildSize: 0.9,
+                          builder: (_, controller) {
+                            return FutureBuilder<Widget>(
+                              future: _ShowListDraftInvoices(),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return Center(
+                                    child: CircularProgressIndicator(),
+                                  );
+                                }
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.vertical(
+                                      top: Radius.circular(25),
+                                    ),
+                                  ),
+                                  child:
+                                      snapshot.data ??
+                                      Center(child: Text('حدث خطأ غير متوقع')),
+                                );
+                              },
+                            );
+                          },
+                        ),
                   );
                 },
-              );
-            },
-          );
-        },
-        backgroundColor: Color(0xFF60B245),
-        child: Icon(Icons.shopping_cart, color: Color(0xffffffff)),
-      ),
-
-      appBar: AppBar(
-        title: const Text('نقطة البيع', style: TextStyle(color: Colors.white)),
-        centerTitle: true,
-        backgroundColor: primaryColor,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.only(
-            bottomRight: Radius.circular(25),
-            bottomLeft: Radius.circular(25),
-          ),
-        ),
-        iconTheme: const IconThemeData(
-          color: Colors.white, // ✅ زر الرجوع يصبح أبيض
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: 120),
-                  child: Text(
-                    selectedCustomer?.customerName ?? 'لم يتم اختيار عميل',
-                    style: TextStyle(color: Colors.white),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                SizedBox(width: 6),
-                IconButton(
-                  icon: Icon(Icons.person, color: Colors.white, size: 20),
-                  tooltip:
-                      selectedCustomer == null ? 'اختيار عميل' : 'تغيير العميل',
-                  onPressed: _showCustomerDialog,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-
-      body: Column(
-        children: [
-          _buildFilterSection(),
-          Expanded(
-            flex: 4,
-            child: GridView.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                childAspectRatio: 0.6,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
+                backgroundColor: Colors.blue,
+                heroTag: 'list_button',
+                child: Icon(Icons.list, color: Colors.white),
               ),
-              padding: EdgeInsets.all(8),
-              itemCount: filteredProducts.length,
-              itemBuilder: (context, index) {
-                return ProductCard(
-                  product: filteredProducts[index],
-                  onTap: () => addToCart(filteredProducts[index]),
-                );
-              },
+            ),
+            Positioned(
+              bottom: 80,
+              right: 5,
+              child: FloatingActionButton(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  _saveInvoice();
+                },
+                backgroundColor: Colors.blue,
+                heroTag: 'save_button',
+                child: Icon(Icons.save, color: Colors.white),
+              ),
+            ),
+            Positioned(
+              bottom: 16,
+              right: 5,
+              child: Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  FloatingActionButton(
+                    heroTag: 'cart_button',
+                    onPressed: () {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(20),
+                          ),
+                        ),
+                        builder: (context) {
+                          final screenHeight =
+                              MediaQuery.of(context).size.height;
+                          return StatefulBuilder(
+                            builder: (context, setModalState) {
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                  bottom:
+                                      MediaQuery.of(context).viewInsets.bottom,
+                                ),
+                                child: SizedBox(
+                                  height: screenHeight * 0.5,
+                                  child: _buildCartSection(setModalState),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                    backgroundColor: Color(0xFF60B245),
+                    child: Icon(Icons.shopping_cart, color: Colors.white),
+                  ),
+                  if (cartItems.isNotEmpty)
+                    Container(
+                      padding: EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: BoxConstraints(minWidth: 22, minHeight: 22),
+                      child: Text(
+                        '${calculateTotalQuantity()}',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        appBar: AppBar(
+          title: const Text(
+            'نقطة البيع',
+            style: TextStyle(color: Colors.white),
+          ),
+          centerTitle: true,
+          backgroundColor: primaryColor,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.only(
+              bottomRight: Radius.circular(25),
+              bottomLeft: Radius.circular(25),
             ),
           ),
-        ],
+          iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: 120),
+                    child: Text(
+                      selectedCustomer?.customerName ?? 'لم يتم اختيار عميل',
+                      style: TextStyle(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  SizedBox(width: 6),
+                  IconButton(
+                    icon: Icon(Icons.person, color: Colors.white, size: 20),
+                    tooltip:
+                        selectedCustomer == null
+                            ? 'اختيار عميل'
+                            : 'تغيير العميل',
+                    onPressed: _showCustomerDialog,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            _buildFilterSection(),
+            Expanded(
+              flex: 4,
+              child: GridView.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 0.6,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                ),
+                padding: EdgeInsets.all(8),
+                itemCount: filteredProducts.length,
+                itemBuilder: (context, index) {
+                  return ProductCard(
+                    product: filteredProducts[index],
+                    onTap: () => addToCart(filteredProducts[index]),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2076,22 +2350,517 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   double? productQtyFromCartOrProducts(Map<String, dynamic> item) {
-    print("test test test test test test");
+    print("=== productQtyFromCartOrProducts ===");
+    print("item: $item");
     try {
       final found = products.firstWhere((p) => p.itemName == item['item_name']);
-      return found.qty;
+      final conversionFactor = item['conversion_factor'] ?? 1.0;
+      final availableQty = found.qty / conversionFactor;
+      print(
+        "found.qty: ${found.qty}, conversionFactor: $conversionFactor, availableQty: $availableQty",
+      );
+      print("=== END productQtyFromCartOrProducts ===");
+      return availableQty;
     } catch (e) {
+      print("Error in productQtyFromCartOrProducts: $e");
       return null;
+    }
+  }
+
+  Future<void> _saveInvoice() async {
+    if (invoDraftName != null) {
+      MessageService.showWarning(context, "لايمكنك حفظ فاتورة معلقة");
+      return;
+    }
+    if (selectedCustomer == null) {
+      MessageService.showWarning(
+        context,
+        'الرجاء اختيار عميل أولاً',
+        title: 'فشل في إتمام البيع',
+      );
+      return;
+    }
+
+    if (cartItems.isEmpty) {
+      MessageService.showWarning(
+        context,
+        'السلة فارغة',
+        title: 'فشل في إتمام البيع',
+      );
+      return;
+    }
+
+    final invoiceResult = await SalesInvoice.createDraftSalesInvoice(
+      customer: selectedCustomer!,
+      items: cartItems,
+      total: 0,
+      paidAmount: 0,
+      outstandingAmount: 0,
+      discountAmount: 0,
+      discountPercentage: 0,
+    );
+
+    MessageService.showSuccess(context, 'تم إنشاء الفاتورة معلقة بنجاح');
+    setState(() {
+      cartItems.clear();
+      total = 0.0;
+      selectedCustomer = null;
+    });
+  }
+
+  Future<Widget> _ShowListDraftInvoices() async {
+    try {
+      final List<SalesInvoiceSummary>? invoices =
+          await SalesInvoice.getDraftSalesinvoice();
+
+      if (invoices == null || invoices.isEmpty) {
+        return Container(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.receipt_long_outlined,
+                  size: 64,
+                  color: Colors.grey[600],
+                ),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'لا توجد فواتير مسودة',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[700],
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'الفواتير المسودة ستظهر هنا',
+                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        );
+      }
+
+      return Column(
+        children: [
+          // Header
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.receipt_long,
+                    color: Colors.blue[700],
+                    size: 20,
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'الفواتير المسودة',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                      Text(
+                        '${invoices.length} فاتورة',
+                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.orange[200]!),
+                  ),
+                  child: Text(
+                    'مسودة',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange[700],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // List
+          Expanded(
+            child: ListView.separated(
+              padding: EdgeInsets.all(16),
+              itemCount: invoices.length,
+              separatorBuilder: (_, __) => SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final invoice = invoices[index];
+                return Dismissible(
+                  key: Key(invoice.invoiceNumber),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    margin: EdgeInsets.symmetric(vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.red[500],
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.delete_forever,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'حذف',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  confirmDismiss: (direction) async {
+                    return await _confirmDelete(context, invoice.invoiceNumber);
+                  },
+                  onDismissed: (direction) {
+                    _deleteInvoice(context, invoice.invoiceNumber);
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap:
+                            () => _loadInvoiceDetails(
+                              context,
+                              invoice.invoiceNumber,
+                            ),
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue[50],
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.receipt,
+                                      color: Colors.blue[700],
+                                      size: 20,
+                                    ),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'فاتورة رقم',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                        Text(
+                                          '#${invoice.invoiceNumber}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                            color: Colors.grey[800],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green[50],
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: Colors.green[200]!,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '${invoice.grandTotal} د.ر',
+                                      style: TextStyle(
+                                        color: Colors.green[700],
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.touch_app,
+                                    size: 16,
+                                    color: Colors.grey[500],
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'اضغط لتحميل الفاتورة',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                  Spacer(),
+                                  Icon(
+                                    Icons.arrow_forward_ios,
+                                    size: 14,
+                                    color: Colors.grey[400],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    } catch (e) {
+      return Container(
+        padding: EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.red[600],
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'حدث خطأ في جلب الفواتير',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.red[700],
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'يرجى المحاولة مرة أخرى',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _loadInvoiceDetails(
+    BuildContext context,
+    String invoiceName,
+  ) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(child: CircularProgressIndicator()),
+      );
+
+      final detailedInvoice = await SalesInvoice.getSalesInvoiceByName(
+        invoiceName,
+      );
+      print(detailedInvoice);
+      print('''
+      === معلومات الفاتورة ===
+      الرقم: ${detailedInvoice['name']}
+      العميل: ${detailedInvoice['customer_name']}
+      الشركة: ${detailedInvoice['company']}
+      التاريخ: ${detailedInvoice['posting_date']}
+      الحالة: ${detailedInvoice['docstatus'] == 0 ? 'مسودة' : 'مؤكدة'}
+      تم الإنشاء بواسطة: ${detailedInvoice['owner']}
+      آخر تعديل: ${detailedInvoice['modified_by']} في ${detailedInvoice['modified']}
+      ${detailedInvoice['items']}
+      ''');
+      setState(() {
+        invoDraftName = detailedInvoice['name'];
+        print('''الرقم: ${detailedInvoice['name']}''');
+        selectedCustomer = Customer(
+          name: detailedInvoice['customer_name'],
+          customerName: detailedInvoice['customer_name'],
+          customerGroup: '',
+        );
+        final List<dynamic> rawItems = detailedInvoice['items'] ?? [];
+        cartItems =
+            rawItems.whereType<Map<String, dynamic>>().map((item) {
+              return {
+                'id': item['name'],
+                'name': item['item_code']?.toString() ?? '',
+                'item_name': item['item_name']?.toString(),
+                'price': (item['rate'] ?? item['price'] ?? 0.0) as double,
+                'quantity': (item['qty'] as num).toInt(),
+                'uom': item['uom']?.toString(),
+                'additionalUOMs': item['additionalUOMs'],
+                'discount_amount': (item['discount_amount'] ?? 0.0) as double,
+                'discount_percentage':
+                    (item['discount_percentage'] ?? 0.0) as double,
+                'cost_center': item['cost_center']?.toString(),
+                'income_account': item['income_account'],
+              };
+            }).toList();
+        total = calculateTotal();
+      });
+
+      Navigator.pop(context);
+      Navigator.pop(context);
+      MessageService.showSuccess(context, "تم  تحميل بيانات الفاتورة ");
+    } catch (e) {
+      Navigator.pop(context);
+      print(e.toString());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحميل الفاتورة: ${e.toString()}')),
+      );
+    }
+  }
+
+  Future<bool> _confirmDelete(
+    BuildContext context,
+    String invoiceNumber,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('تأكيد الحذف'),
+            content: Text(
+              'هل أنت متأكد من حذف الفاتورة #$invoiceNumber؟ لا يمكن التراجع عن هذا الإجراء.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('إلغاء'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('حذف', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+    );
+
+    return confirmed ?? false;
+  }
+
+  Future<void> _deleteInvoice(
+    BuildContext context,
+    String invoiceNumber,
+  ) async {
+    try {
+      final success = await SalesInvoice.deleteInvoice(invoiceNumber);
+      if (success) {
+        MessageService.showSuccess(context, "تم حذف الفاتورة المعلقة بنجاح");
+        setState(() {});
+      }
+    } catch (e) {
+      MessageService.showWarning(context, "لم يتم حذف الفاتورة المعلقة ");
     }
   }
 }
 
-void printTest(
+void printSalesInvoice(
   Customer? selectedCustomer,
   List<Map<String, dynamic>> cartItems,
   invoName,
   outstanding,
 ) async {
+  print('=== DEBUG PRINT TEST ===');
+  print('selectedCustomer: ${selectedCustomer?.customerName}');
+  print('cartItems length: ${cartItems.length}');
+  print('cartItems: $cartItems');
+  print('cartItems is empty: ${cartItems.isEmpty}');
+  print('cartItems is null: ${cartItems == null}');
+  print('invoName: $invoName');
+  print('outstanding: $outstanding');
+  print('=== END DEBUG ===');
+
   if (!await isSunmiDevice()) {
     print('🚫 ليس جهاز Sunmi. إلغاء الطباعة.');
     return;
@@ -2154,8 +2923,13 @@ void printTest(
         style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
       ),
       SunmiColumn(
+        text: 'الوحدة',
+        width: 2,
+        style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT, bold: true),
+      ),
+      SunmiColumn(
         text: 'المنتج',
-        width: 5,
+        width: 4,
         style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT, bold: true),
       ),
     ],
@@ -2166,23 +2940,30 @@ void printTest(
   );
   double total = 0.0;
 
+  print('=== DEBUG PRINTING ITEMS ===');
+  print('cartItems length in printTest: ${cartItems.length}');
+
   for (final item in cartItems) {
+    print('Processing item: $item');
     final name = item['item_name'] ?? '';
     final qty = item['quantity'] ?? 0;
-    final rate = item['price'] ?? 0.0;
-    final amount = (qty * rate);
+    final rate = item['price'].toInt();
+    final amount = (qty * rate).toInt();
+    final uom = item['uom'];
+
+    print('name: $name, qty: $qty, rate: $rate, amount: $amount, uom: $uom');
 
     total += amount;
 
     await SunmiPrinter.printRow(
       cols: [
         SunmiColumn(
-          text: amount.toStringAsFixed(1),
+          text: amount.toStringAsFixed(0),
           width: 2,
           style: SunmiTextStyle(align: SunmiPrintAlign.LEFT),
         ),
         SunmiColumn(
-          text: rate.toStringAsFixed(1),
+          text: rate.toStringAsFixed(0),
           width: 2,
           style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
         ),
@@ -2190,6 +2971,11 @@ void printTest(
           text: '×$qty',
           width: 2,
           style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+        ),
+        SunmiColumn(
+          text: uom,
+          width: 2,
+          style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT),
         ),
         SunmiColumn(
           text: name,
@@ -2206,11 +2992,11 @@ void printTest(
 
   await SunmiPrinter.printText(
     'الإجمالي: ${total.toStringAsFixed(1)} LYD',
-    style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.LEFT),
+    style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.RIGHT),
   );
   await SunmiPrinter.printText(
     'ديون: ${outstanding.toStringAsFixed(1)} LYD',
-    style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.LEFT),
+    style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.RIGHT),
   );
   await SunmiPrinter.printText(
     '--------------------------------',
@@ -2218,12 +3004,16 @@ void printTest(
   );
   await SunmiPrinter.printText(
     'شكرًا لزيارتكم!',
-    style: SunmiTextStyle(bold: true, fontSize: 35),
+    style: SunmiTextStyle(
+      bold: true,
+      fontSize: 35,
+      align: SunmiPrintAlign.CENTER,
+    ),
   );
 
   await SunmiPrinter.printText(
     'نتمنى أن نراكم مجددًا 😊',
-    style: SunmiTextStyle(fontSize: 35),
+    style: SunmiTextStyle(fontSize: 35, align: SunmiPrintAlign.CENTER),
   );
 
   await SunmiPrinter.lineWrap(3);
@@ -2374,7 +3164,6 @@ class ProductCard extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Price on the left
         Text(
           '${product.rate.toStringAsFixed(0)} LYD',
           style: const TextStyle(
@@ -2383,7 +3172,14 @@ class ProductCard extends StatelessWidget {
             fontWeight: FontWeight.bold,
           ),
         ),
-        // Quantity on the right
+        Text(
+          product.uom,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 4,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import '../models/visit.dart';
 import '../services/visit_service.dart';
 import 'package:intl/intl.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'dart:io';
 
 class VisitReportPage extends StatefulWidget {
   final int filter;
@@ -27,39 +25,16 @@ class _VisitReportPageState extends State<VisitReportPage> {
   List<Visit> _allVisits = [];
   List<Visit> _filteredVisits = [];
   bool _isLoading = true;
-  bool? hasInternet;
 
   final TextEditingController _searchController = TextEditingController();
   bool _isDisposed = false;
   @override
   void initState() {
     super.initState();
-    _checkInternet();
     _quickFilter = widget.filter;
+    _applyQuickFilter(_quickFilter);
     _searchController.addListener(_applySearch);
     _isDisposed = true;
-  }
-
-  Future<void> _checkInternet() async {
-    final connectivityResult = await Connectivity().checkConnectivity();
-    bool realInternet = false;
-    if (connectivityResult.first == ConnectivityResult.wifi ||
-        connectivityResult.first == ConnectivityResult.mobile ||
-        connectivityResult.first == ConnectivityResult.ethernet) {
-      try {
-        final result = await InternetAddress.lookup('google.com');
-        realInternet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-      } catch (_) {
-        realInternet = false;
-      }
-    }
-    if (!mounted) return;
-    setState(() {
-      hasInternet = realInternet;
-    });
-    if (realInternet) {
-      _applyQuickFilter(_quickFilter);
-    }
   }
 
   @override
@@ -123,13 +98,10 @@ class _VisitReportPageState extends State<VisitReportPage> {
   Future<void> _loadReport() async {
     setState(() => _isLoading = true);
     try {
-      print(_fromDate);
-      print(_toDate);
       final data = await VisitService.fetchVisitsByProfileDate(
         from: _fromDate,
         to: _toDate,
       );
-      print(data);
       if (!_isDisposed) return;
       setState(() {
         _allVisits = data;
@@ -158,47 +130,89 @@ class _VisitReportPageState extends State<VisitReportPage> {
     });
   }
 
-  void _showStateFilterDialog() {
+  void _showStateFilterBottomSheet(BuildContext context) {
     final states = _allVisits.map((v) => v.select_state).toSet().toList();
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) {
-        return AlertDialog(
-          title: const Text('فلتر حسب الحالة'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children:
-                  states
-                      .map(
-                        (state) => ListTile(
-                          title: Text(state),
-                          onTap: () {
-                            setState(() {
-                              _filteredVisits =
-                                  _allVisits
-                                      .where((v) => v.select_state == state)
-                                      .toList();
-                            });
-                            Navigator.pop(context);
-                          },
-                        ),
-                      )
-                      .toList(),
-            ),
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'فلترة حسب الحالة',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+
+              // خيار "الكل"
+              SingleChildScrollView(
+                child: ListTile(
+                  leading: const Icon(Icons.all_inclusive, color: Colors.black),
+                  title: const Text('الكل'),
+                  onTap: () {
+                    setState(() {
+                      _filteredVisits = _allVisits;
+                    });
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+
+              // عرض الحالات مع الأيقونات
+              ...states.map((state) {
+                IconData icon;
+                Color color;
+
+                switch (state) {
+                  case 'لم تتم زيارة':
+                    icon = Icons.pending_actions;
+                    color = Colors.orange;
+                    break;
+                  case 'تمت زيارة':
+                    icon = Icons.check_circle;
+                    color = Colors.green;
+                    break;
+                  case 'فاتورة':
+                    icon = Icons.receipt;
+                    color = Colors.blue;
+                    break;
+                  case 'ايصال قبض':
+                    icon = Icons.payment;
+                    color = Colors.purple;
+                    break;
+                  case 'فاتورة + ايصال قبض':
+                    icon = Icons.receipt_long;
+                    color = Colors.indigo;
+                    break;
+                  default:
+                    icon = Icons.filter_alt;
+                    color = Colors.grey;
+                }
+
+                return ListTile(
+                  leading: Icon(icon, color: color),
+                  title: Text(state),
+                  onTap: () {
+                    setState(() {
+                      _filteredVisits =
+                          _allVisits
+                              .where((v) => v.select_state == state)
+                              .toList();
+                    });
+                    Navigator.pop(context);
+                  },
+                );
+              }),
+
+              const SizedBox(height: 8),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _filteredVisits = _allVisits;
-                });
-                Navigator.pop(context);
-              },
-              child: const Text('إظهار الكل'),
-            ),
-          ],
         );
       },
     );
@@ -206,49 +220,6 @@ class _VisitReportPageState extends State<VisitReportPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (hasInternet == false) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('تقرير الزيارات'),
-          backgroundColor: primaryColor,
-          foregroundColor: Colors.white,
-          centerTitle: true,
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.wifi_off, size: 80, color: Colors.redAccent),
-              const SizedBox(height: 24),
-              Text(
-                'لا يوجد اتصال بالإنترنت',
-                style: TextStyle(
-                  fontSize: 24,
-                  color: Colors.redAccent,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'يرجى التحقق من الاتصال وحاول مرة أخرى',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton.icon(
-                icon: Icon(Icons.refresh),
-                label: Text('إعادة المحاولة'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                  textStyle: TextStyle(fontSize: 18),
-                ),
-                onPressed: _checkInternet,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
     return Theme(
       data: Theme.of(context).copyWith(
         primaryColor: primaryColor,
@@ -263,6 +234,12 @@ class _VisitReportPageState extends State<VisitReportPage> {
           backgroundColor: primaryColor,
           foregroundColor: Colors.white,
           centerTitle: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.only(
+              bottomRight: Radius.circular(25),
+              bottomLeft: Radius.circular(25),
+            ),
+          ),
         ),
         body: Stack(
           children: [
@@ -386,7 +363,7 @@ class _VisitReportPageState extends State<VisitReportPage> {
               bottom: 20,
               right: 20,
               child: GestureDetector(
-                onTap: _showStateFilterDialog,
+                onTap: () => _showStateFilterBottomSheet(context),
                 child: Container(
                   decoration: BoxDecoration(
                     color: primaryColor,

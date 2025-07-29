@@ -95,7 +95,7 @@ class _ScreenPaymentDetails extends State<PaymentDetails> {
               paymentDetails == null
                   ? null
                   : () {
-                    /* طباعة */
+                    printTest(paymentDetails!);
                   },
         ),
       ),
@@ -267,11 +267,15 @@ void printTest(PaymentEntryReport payment) async {
   );
   await SunmiPrinter.printText(
     'شكرًا لكم!',
-    style: SunmiTextStyle(bold: true, fontSize: 35),
+    style: SunmiTextStyle(
+      bold: true,
+      fontSize: 35,
+      align: SunmiPrintAlign.CENTER,
+    ),
   );
   await SunmiPrinter.printText(
     'نتمنى لكم يوماً سعيداً 😊',
-    style: SunmiTextStyle(fontSize: 30),
+    style: SunmiTextStyle(fontSize: 30, align: SunmiPrintAlign.CENTER),
   );
   await SunmiPrinter.lineWrap(3);
   await SunmiPrinter.cutPaper();

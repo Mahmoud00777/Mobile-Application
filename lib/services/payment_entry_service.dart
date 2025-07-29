@@ -113,7 +113,6 @@ class PaymentEntryService {
     required String newStatus,
   }) async {
     try {
-      // 1. البحث عن الزيارة المفتوحة لهذا الزبون والوردية
       final visitResponse = await ApiClient.get(
         '/api/resource/Visit?fields=["name"]'
         '&filters=['
@@ -129,7 +128,6 @@ class PaymentEntryService {
         if (visits.isNotEmpty) {
           final visitName = visits.first['name'];
 
-          // 2. تحديث حالة الزيارة
           final updateResponse =
               await ApiClient.putJson('/api/resource/Visit/$visitName', {
                 'select_state': newStatus,

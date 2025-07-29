@@ -300,6 +300,7 @@ class _InvoiceDetailScreenState extends State<InvoDetailsScreen> {
 }
 
 void printTest(SalesInvoiceSummary invo) async {
+  print('''invo ===>>> $invo''');
   if (!await isSunmiDevice()) {
     print('🚫 ليس جهاز Sunmi. إلغاء الطباعة.');
     return;
@@ -351,8 +352,13 @@ void printTest(SalesInvoiceSummary invo) async {
         style: SunmiTextStyle(align: SunmiPrintAlign.CENTER, bold: true),
       ),
       SunmiColumn(
+        text: 'الوحدة',
+        width: 2,
+        style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT, bold: true),
+      ),
+      SunmiColumn(
         text: 'المنتج',
-        width: 5,
+        width: 4,
         style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT, bold: true),
       ),
     ],
@@ -369,18 +375,19 @@ void printTest(SalesInvoiceSummary invo) async {
     final qty = item.qty ?? 0;
     final rate = item.rate ?? 0.0;
     final amount = (qty * rate);
+    final uom = item.uom;
 
     total += amount;
 
     await SunmiPrinter.printRow(
       cols: [
         SunmiColumn(
-          text: amount.toStringAsFixed(1),
+          text: amount.toStringAsFixed(0),
           width: 2,
           style: SunmiTextStyle(align: SunmiPrintAlign.LEFT),
         ),
         SunmiColumn(
-          text: rate.toStringAsFixed(1),
+          text: rate.toStringAsFixed(0),
           width: 2,
           style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
         ),
@@ -388,6 +395,11 @@ void printTest(SalesInvoiceSummary invo) async {
           text: '×$qty',
           width: 2,
           style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
+        ),
+        SunmiColumn(
+          text: uom,
+          width: 2,
+          style: SunmiTextStyle(align: SunmiPrintAlign.RIGHT),
         ),
         SunmiColumn(
           text: name,
@@ -403,7 +415,7 @@ void printTest(SalesInvoiceSummary invo) async {
   }
   await SunmiPrinter.printText(
     'الإجمالي: ${total.toStringAsFixed(1)} LYD',
-    style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.LEFT),
+    style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.RIGHT),
   );
   await SunmiPrinter.printText(
     '--------------------------------',
@@ -411,12 +423,16 @@ void printTest(SalesInvoiceSummary invo) async {
   );
   await SunmiPrinter.printText(
     'شكرًا لزيارتكم!',
-    style: SunmiTextStyle(bold: true, fontSize: 35),
+    style: SunmiTextStyle(
+      bold: true,
+      fontSize: 35,
+      align: SunmiPrintAlign.CENTER,
+    ),
   );
 
   await SunmiPrinter.printText(
     'نتمنى أن نراكم مجددًا 😊',
-    style: SunmiTextStyle(fontSize: 35),
+    style: SunmiTextStyle(fontSize: 35, align: SunmiPrintAlign.CENTER),
   );
 
   await SunmiPrinter.lineWrap(3);

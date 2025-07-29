@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:drsaf/Class/message_service.dart';
 import 'package:drsaf/services/payment_service_list.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/customer.dart';
 import '../models/customer_outstanding.dart';
 import '../models/payment_entry.dart';
@@ -35,6 +38,7 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
   bool _isLoading = true;
   String? _selectedMethod;
   String? _errorMessage;
+  bool _isSubmitting = false;
   final Color primaryColor = Color(0xFF60B245);
   final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
@@ -248,22 +252,43 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
     if (text.isEmpty || double.tryParse(text) == null) return;
 
     final amount = double.parse(text);
+    if (amount <= 0) {
+      MessageService.showWarning(context, "يجب ان تكون القيمة اكبر من الصفر");
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final posProfileJson = prefs.getString('selected_pos_profile');
+    final openShiftId = prefs.getString('pos_open');
+
+    if (posProfileJson == null || posProfileJson.isEmpty) {
+      throw Exception('لم يتم تحديد إعدادات نقطة البيع (POS Profile)');
+    }
+
+    if (openShiftId == null) {
+      throw Exception('لا يوجد وردية مفتوحة');
+    }
+
+    final posProfile = json.decode(posProfileJson);
+    final currency = posProfile['currency'];
+    final debitTo = posProfile['custom_debit_to'];
+    final company = posProfile['company'];
     final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     final series = 'PE-\$timestamp';
 
     final entry = PaymentEntry(
       paymentType: 'Receive',
       namingSeries: '',
-      company: 'HR',
+      company: company,
       modeOfPayment: _selectedMethod!,
       partyType: 'Customer',
       party: _selectedCustomer!.name,
       partyName: _selectedCustomer!.customerName,
-      paidFrom: '1310 - مدينون - HR',
-      paidFromAccountCurrency: 'LYD',
+      paidFrom: debitTo,
+      paidFromAccountCurrency: currency,
       paidTo: _selectedAccount!,
       referenceNo: 'null',
-      paidToAccountCurrency: 'LYD',
+      paidToAccountCurrency: currency,
       referenceDate: DateFormat('yyyy-MM-dd').format(DateTime.now()),
       receivedAmount: amount,
       paidAmount: amount,
@@ -271,12 +296,20 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
       remarks: '',
     );
 
+    setState(() {
+      _isSubmitting = true;
+    });
+
     try {
       await PaymentEntryService.createPayment(entry);
       MessageService.showSuccess(context, 'تم إنشاء الدفعة بنجاح');
       Navigator.pop(context);
     } catch (e) {
       MessageService.showError(context, 'خطأ في الحفظ: \$e');
+    } finally {
+      setState(() {
+        _isSubmitting = false;
+      });
     }
   }
 
@@ -417,7 +450,7 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
                     SizedBox(height: 35),
                     // Submit button
                     ElevatedButton(
-                      onPressed: _submit,
+                      onPressed: _isSubmitting ? null : _submit,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
                         minimumSize: Size.fromHeight(48),
@@ -425,11 +458,14 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-
-                      child: Text(
-                        'إرسال',
-                        style: TextStyle(fontSize: 18, color: secondaryColor),
-                      ),
+                      child: _isSubmitting
+                          ? CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(secondaryColor),
+                            )
+                          : Text(
+                              'إرسال',
+                              style: TextStyle(fontSize: 18, color: secondaryColor),
+                            ),
                     ),
                   ],
                 )
