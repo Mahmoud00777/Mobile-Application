@@ -4,6 +4,7 @@ import '../models/bin_report.dart';
 import '../services/bin_report_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:io';
+import 'dart:async';
 
 class BinReportPage extends StatefulWidget {
   const BinReportPage({super.key});
@@ -23,6 +24,7 @@ class _BinReportPageState extends State<BinReportPage> {
   final int _pageSize = 20;
   bool _hasMore = true;
   bool? hasInternet;
+  Timer? _searchTimer;
 
   final Color primaryColor = Color(0xFF60B245);
   final Color secondaryColor = Color(0xFFFFFFFF);
@@ -37,7 +39,17 @@ class _BinReportPageState extends State<BinReportPage> {
   @override
   void dispose() {
     _itemController.dispose();
+    _searchTimer?.cancel();
     super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(Duration(milliseconds: 500), () {
+      if (mounted) {
+        _fetchPage(reset: true);
+      }
+    });
   }
 
   Future<void> _checkInternet() async {
@@ -63,35 +75,44 @@ class _BinReportPageState extends State<BinReportPage> {
   }
 
   Future<void> _loadWarehouses() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
-      // 1. جلب المخزن من ملف البيع فقط
       final warehouse = await WarehouseService.getWarehouses();
 
-      setState(() {
-        // 2. تعبئة القائمة بالمخزن الوحيد إن وجد
-        _warehouses = warehouse != null ? [warehouse.name] : [];
-
-        // 3. تحديد المخزن المحدد (سيكون الوحيد في القائمة)
-        _selectedWarehouse = warehouse?.name;
-      });
-
-      // 4. تحميل البيانات المرتبطة بالمخزن
-      if (_selectedWarehouse != null) {
-        _fetchPage(reset: true);
+      if (mounted) {
+        final selectedWarehouse = warehouse?.name;
+        setState(() {
+          _warehouses = warehouse != null ? [warehouse.name] : [];
+          _selectedWarehouse = selectedWarehouse;
+        });
+        
+        // تحميل البيانات بعد تعيين المخزن
+        if (selectedWarehouse != null) {
+          _fetchPage(reset: true);
+        }
       }
     } catch (e) {
-      setState(() => _error = 'حدث خطأ: ${e.toString()}');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطأ في جلب مخزن ملف البيع: ${e.toString()}')),
-      );
+      if (mounted) {
+        setState(() => _error = 'حدث خطأ: ${e.toString()}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ في جلب مخزن ملف البيع: ${e.toString()}')),
+        );
+      }
     } finally {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   Future<void> _fetchPage({bool reset = false}) async {
     if (_loading || (!_hasMore && !reset)) return;
+    if (!mounted) return;
+    if (_selectedWarehouse == null) {
+      setState(() => _error = 'يرجى اختيار مخزن أولاً');
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -108,15 +129,21 @@ class _BinReportPageState extends State<BinReportPage> {
         limitStart: _page * _pageSize,
         limitPageLength: _pageSize,
       );
-      setState(() {
-        _data.addAll(rows);
-        _hasMore = rows.length == _pageSize;
-        _page++;
-      });
+      if (mounted) {
+        setState(() {
+          _data.addAll(rows);
+          _hasMore = rows.length == _pageSize;
+          _page++;
+        });
+      }
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) {
+        setState(() => _error = e.toString());
+      }
     } finally {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -217,27 +244,36 @@ class _BinReportPageState extends State<BinReportPage> {
                               )
                               .toList(),
                       onChanged: (v) {
-                        setState(() => _selectedWarehouse = v);
-                        _fetchPage(reset: true);
+                        if (mounted) {
+                          setState(() {
+                            _selectedWarehouse = v;
+                          });
+                          // تحميل البيانات بعد تحديث المخزن
+                          if (v != null) {
+                            _fetchPage(reset: true);
+                          }
+                        }
                       },
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 3,
-                    child: TextField(
-                      controller: _itemController,
-                      decoration: InputDecoration(
-                        labelText: 'الصنف أو الكود',
-                        filled: true,
-                        fillColor: secondaryColor,
-                        prefixIcon: Icon(Icons.search, color: primaryColor),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                                         child: TextField(
+                       controller: _itemController,
+                                               decoration: InputDecoration(
+                          labelText: 'اسم الصنف أو الكود',
+                          hintText: 'ابحث في اسم الصنف أو كود الصنف',
+                          filled: true,
+                          fillColor: secondaryColor,
+                          prefixIcon: Icon(Icons.search, color: primaryColor),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
-                      ),
-                      onSubmitted: (_) => _fetchPage(reset: true),
-                    ),
+                       onChanged: _onSearchChanged,
+                       onSubmitted: (_) => _fetchPage(reset: true),
+                     ),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
@@ -257,11 +293,76 @@ class _BinReportPageState extends State<BinReportPage> {
               Expanded(
                 child:
                     _error != null
-                        ? Center(child: Text('Error: $_error'))
-                        : ListView.builder(
-                          itemCount: _data.length + (_hasMore ? 1 : 0),
-                          itemBuilder: (ctx, i) {
-                            if (i < _data.length) {
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.error_outline, size: 50, color: Colors.red),
+                                SizedBox(height: 16),
+                                Text(
+                                  _error!,
+                                  style: TextStyle(fontSize: 16, color: Colors.red),
+                                  textAlign: TextAlign.center,
+                                ),
+                                SizedBox(height: 16),
+                                ElevatedButton(
+                                  onPressed: () => _fetchPage(reset: true),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: primaryColor,
+                                    foregroundColor: secondaryColor,
+                                  ),
+                                  child: Text('إعادة المحاولة'),
+                                ),
+                              ],
+                            ),
+                          )
+                                                 : _data.isEmpty && !_loading && _itemController.text.trim().isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.inventory_2_outlined, size: 80, color: Colors.grey),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'لا توجد بيانات مخزون',
+                                      style: TextStyle(fontSize: 18, color: Colors.grey),
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'جرب تغيير معايير البحث',
+                                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : _data.isEmpty && !_loading && _itemController.text.trim().isNotEmpty
+                                ? Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.search_off, size: 80, color: Colors.grey),
+                                        SizedBox(height: 16),
+                                                                             Text(
+                                       'لا توجد نتائج للبحث',
+                                       style: TextStyle(fontSize: 18, color: Colors.grey),
+                                     ),
+                                     SizedBox(height: 8),
+                                     Text(
+                                       'البحث: "${_itemController.text.trim()}"',
+                                       style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                                     ),
+                                        SizedBox(height: 8),
+                                        Text(
+                                          'جرب كلمات بحث مختلفة',
+                                          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : ListView.builder(
+                              itemCount: _data.length + (_hasMore ? 1 : 0),
+                              itemBuilder: (ctx, i) {
+                                if (i < _data.length) {
                               final row = _data[i];
                               return Card(
                                 margin: const EdgeInsets.symmetric(vertical: 6),
@@ -270,24 +371,31 @@ class _BinReportPageState extends State<BinReportPage> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 elevation: 3,
-                                child: ListTile(
-                                  title: Text(
-                                    row.itemCode,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Color.fromARGB(255, 85, 84, 84),
-                                    ),
-                                  ),
-                                  subtitle: Text('المخزن: ${row.warehouse}'),
-                                  trailing: Text(
-                                    'الكمية: ${row.actualQty}',
-                                    style: TextStyle(
-                                      fontSize: 18, // حجم الخط المكبر
-                                      fontWeight: FontWeight.bold,
-                                      color: Color.fromARGB(255, 85, 84, 84),
-                                    ),
-                                  ),
-                                ),
+                                                                 child: ListTile(
+                                   title: Text(
+                                     row.itemName.isNotEmpty ? row.itemName : row.itemCode,
+                                     style: TextStyle(
+                                       fontWeight: FontWeight.bold,
+                                       color: Color.fromARGB(255, 85, 84, 84),
+                                     ),
+                                   ),
+                                   subtitle: Column(
+                                     crossAxisAlignment: CrossAxisAlignment.start,
+                                     children: [
+                                       if (row.itemName.isNotEmpty && row.itemName != row.itemCode)
+                                         Text('الكود: ${row.itemCode}'),
+                                       Text('المخزن: ${row.warehouse}'),
+                                     ],
+                                   ),
+                                   trailing: Text(
+                                     'الكمية: ${row.actualQty}',
+                                     style: TextStyle(
+                                       fontSize: 18, // حجم الخط المكبر
+                                       fontWeight: FontWeight.bold,
+                                       color: Color.fromARGB(255, 85, 84, 84),
+                                     ),
+                                   ),
+                                 ),
                               );
                             } else {
                               return Padding(

@@ -34,17 +34,18 @@ class _VisitReportPageState extends State<VisitReportPage> {
     _quickFilter = widget.filter;
     _applyQuickFilter(_quickFilter);
     _searchController.addListener(_applySearch);
-    _isDisposed = true;
+    _isDisposed = false;
   }
 
   @override
   void dispose() {
-    _isDisposed = false;
+    _isDisposed = true;
     _searchController.dispose();
     super.dispose();
   }
 
   void _applyQuickFilter(int index) {
+    if (_isDisposed) return;
     setState(() {
       _quickFilter = index;
       final now = DateTime.now();
@@ -85,7 +86,7 @@ class _VisitReportPageState extends State<VisitReportPage> {
       lastDate: DateTime.now(),
       initialDateRange: DateTimeRange(start: _fromDate, end: _toDate),
     );
-    if (picked != null) {
+    if (picked != null && !_isDisposed) {
       setState(() {
         _fromDate = picked.start;
         _toDate = picked.end;
@@ -96,27 +97,33 @@ class _VisitReportPageState extends State<VisitReportPage> {
   }
 
   Future<void> _loadReport() async {
+    if (_isDisposed) return;
     setState(() => _isLoading = true);
     try {
       final data = await VisitService.fetchVisitsByProfileDate(
         from: _fromDate,
         to: _toDate,
       );
-      if (!_isDisposed) return;
+      if (_isDisposed) return;
       setState(() {
         _allVisits = data;
         _applySearch();
       });
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('خطأ في تحميل البيانات: $e')));
+      if (!_isDisposed) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('خطأ في تحميل البيانات: $e')));
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (!_isDisposed) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   void _applySearch() {
+    if (_isDisposed) return;
     final query = _searchController.text.trim().toLowerCase();
     setState(() {
       if (query.isEmpty) {
@@ -151,14 +158,16 @@ class _VisitReportPageState extends State<VisitReportPage> {
               const SizedBox(height: 12),
 
               // خيار "الكل"
-              SingleChildScrollView(
+                              SingleChildScrollView(
                 child: ListTile(
                   leading: const Icon(Icons.all_inclusive, color: Colors.black),
                   title: const Text('الكل'),
                   onTap: () {
-                    setState(() {
-                      _filteredVisits = _allVisits;
-                    });
+                    if (!_isDisposed) {
+                      setState(() {
+                        _filteredVisits = _allVisits;
+                      });
+                    }
                     Navigator.pop(context);
                   },
                 ),
@@ -199,12 +208,14 @@ class _VisitReportPageState extends State<VisitReportPage> {
                   leading: Icon(icon, color: color),
                   title: Text(state),
                   onTap: () {
-                    setState(() {
-                      _filteredVisits =
-                          _allVisits
-                              .where((v) => v.select_state == state)
-                              .toList();
-                    });
+                    if (!_isDisposed) {
+                      setState(() {
+                        _filteredVisits =
+                            _allVisits
+                                .where((v) => v.select_state == state)
+                                .toList();
+                      });
+                    }
                     Navigator.pop(context);
                   },
                 );

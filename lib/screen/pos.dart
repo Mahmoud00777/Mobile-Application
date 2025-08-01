@@ -1857,36 +1857,29 @@ class _POSScreenState extends State<POSScreen> {
                     backgroundColor: Colors.transparent,
                     barrierColor: Colors.black54,
                     isDismissible: true,
-                    builder:
-                        (context) => DraggableScrollableSheet(
-                          initialChildSize: 0.6,
-                          minChildSize: 0.3,
-                          maxChildSize: 0.9,
-                          builder: (_, controller) {
-                            return FutureBuilder<Widget>(
-                              future: _ShowListDraftInvoices(),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return Center(
-                                    child: CircularProgressIndicator(),
-                                  );
-                                }
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(25),
-                                    ),
-                                  ),
-                                  child:
-                                      snapshot.data ??
-                                      Center(child: Text('حدث خطأ غير متوقع')),
-                                );
-                              },
-                            );
-                          },
+                    enableDrag: false, // Prevent dragging
+                    builder: (context) => Container(
+                      height: MediaQuery.of(context).size.height * 0.7, // Fixed height
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(25),
                         ),
+                      ),
+                      child: FutureBuilder<Widget>(
+                        future: _ShowListDraftInvoices(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+                          return snapshot.data ??
+                              Center(child: Text('حدث خطأ غير متوقع'));
+                        },
+                      ),
+                    ),
                   );
                 },
                 backgroundColor: Colors.blue,

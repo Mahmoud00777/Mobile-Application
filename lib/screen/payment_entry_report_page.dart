@@ -68,6 +68,7 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
 
   Future<void> _loadProfile() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       _posProfile =
           prefs.getString('selected_pos_profile_name') ?? 'Default POS Profile';
@@ -76,6 +77,7 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
   }
 
   void _applyQuickFilter(int index) {
+    if (!mounted) return;
     setState(() {
       _quickFilter = index;
       final now = DateTime.now();
@@ -116,7 +118,7 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
       lastDate: DateTime.now(),
       initialDateRange: DateTimeRange(start: _fromDate, end: _toDate),
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         _fromDate = picked.start;
         _toDate = picked.end;
@@ -135,6 +137,7 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
 
   Future<void> _loadMore() async {
     if (_isLoading || !_hasMore || _posProfile == null) return;
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final newItems = await PaymentEntryReportService.fetchReport(
@@ -145,15 +148,19 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
         limit: _pageSize,
       );
 
-      setState(() {
-        _entries.addAll(newItems);
-        _offset += newItems.length;
-        _hasMore = newItems.length == _pageSize;
-      });
+      if (mounted) {
+        setState(() {
+          _entries.addAll(newItems);
+          _offset += newItems.length;
+          _hasMore = newItems.length == _pageSize;
+        });
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -236,9 +243,11 @@ class _PaymentEntryReportPageState extends State<PaymentEntryReportPage> {
                   TextField(
                     controller: _searchController,
                     onChanged: (value) {
-                      setState(() {
-                        _searchTerm = value.trim();
-                      });
+                      if (mounted) {
+                        setState(() {
+                          _searchTerm = value.trim();
+                        });
+                      }
                     },
                     decoration: InputDecoration(
                       labelText: 'بحث باسم العميل',

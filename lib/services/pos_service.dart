@@ -92,6 +92,7 @@ class PosService {
       'balance_details': balanceDetails,
     };
 
+    // ✅ إنشاء POS Opening Entry
     final res = await ApiClient.postJson(
       '/api/resource/POS Opening Entry',
       posData,
@@ -101,26 +102,38 @@ class PosService {
     if (res.statusCode != 200) {
       throw Exception('فشل في إنشاء POS Opening Entry');
     }
+
     final name = jsonDecode(res.body)['data']['name'];
     final posTime = jsonDecode(res.body)['data']['period_start_date'];
+
+    // ✅ تشغيل العمليات بالتوازي
+    final results = await Future.wait([
+      // حفظ البيانات في SharedPreferences
+      _saveToSharedPreferences(name, posTime),
+      // Submit POS Entry
+      ApiClient.putJson('/api/resource/POS Opening Entry/$name', {
+        'docstatus': 1,
+      }),
+      // جلب العملاء وإنشاء الزيارات
+      _getCustomersWithCoordinates(posProfile['name']).then(
+        (customers) => _createVisitsForCustomers(
+          customers: customers,
+          posProfile: posProfile['name'],
+          posOpeningShift: name,
+          user: user,
+        ),
+      ),
+    ]);
+  }
+
+  // ✅ دالة مساعدة لحفظ البيانات
+  static Future<void> _saveToSharedPreferences(
+    String name,
+    String posTime,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('pos_open', name);
     await prefs.setString('pos_time', posTime);
-
-    final submitRes = await ApiClient.putJson(
-      '/api/resource/POS Opening Entry/$name',
-      {'docstatus': 1},
-    );
-    print('Submit POS Entry: ${submitRes.statusCode} - ${submitRes.body}');
-    final customers = await _getCustomersWithCoordinates(posProfile['name']);
-    print('createOpeningEntry - customer: $customers');
-
-    await _createVisitsForCustomers(
-      customers: customers,
-      posProfile: posProfile['name'],
-      posOpeningShift: name,
-      user: user,
-    );
   }
 
   static Future<List<Map<String, dynamic>>> _getCustomersWithCoordinates(
@@ -137,20 +150,21 @@ class PosService {
 
         print('_getCustomersWithCoordinates - customers: $customers');
 
-        // جلب بيانات كل عميل مع إحداثياته
-        final customersWithCoords = <Map<String, dynamic>>[];
-        for (final customerObj in customers) {
-          final customerName = customerObj['customer']?.toString();
-          if (customerName != null && customerName.isNotEmpty) {
-            final customerData = await _getCustomerDetails(customerName);
-            print('customersWithCoords - customers: $customerData');
+        // ✅ تشغيل جميع استعلامات العملاء بالتوازي
+        final futures =
+            customers.map((customerObj) async {
+              final customerName = customerObj['customer']?.toString();
+              if (customerName != null && customerName.isNotEmpty) {
+                return await _getCustomerDetails(customerName);
+              }
+              return null;
+            }).toList();
 
-            if (customerData != null) {
-              customersWithCoords.add(customerData);
-            }
-          }
-        }
-        return customersWithCoords;
+        final results = await Future.wait(futures);
+        return results
+            .where((customer) => customer != null)
+            .cast<Map<String, dynamic>>()
+            .toList();
       }
       return [];
     } catch (e) {
@@ -194,27 +208,32 @@ class PosService {
     required String user,
   }) async {
     try {
-      for (final customer in customers) {
-        print('_createVisitsForCustomers - customer: $customers');
+      // ✅ تشغيل جميع إنشاءات الزيارات بالتوازي
+      final futures =
+          customers.map((customer) async {
+            final visitData = {
+              'doctype': 'Visit',
+              'customer': customer['name'],
+              'pos_profile': posProfile,
+              'pos_opening_shift': posOpeningShift,
+              'visit': false,
+              'note': 'زيارة مخططة لفتح وردية البيع',
+              'owner': user,
+              'latitude': customer['latitude'],
+              'longitude': customer['longitude'],
+              'select_state': 'لم تتم زيارة',
+            };
 
-        final visitData = {
-          'doctype': 'Visit',
-          'customer': customer['name'],
-          'pos_profile': posProfile,
-          'pos_opening_shift': posOpeningShift,
-          'visit': false,
-          'note': 'زيارة مخططة لفتح وردية البيع',
-          'owner': user,
-          'latitude': customer['latitude'],
-          'longitude': customer['longitude'],
-          'select_state': 'لم تتم زيارة',
-        };
+            return await ApiClient.postJson('/api/resource/Visit', visitData);
+          }).toList();
 
-        final response = await ApiClient.postJson(
-          '/api/resource/Visit',
-          visitData,
-        );
+      // ✅ انتظار جميع إنشاءات الزيارات مرة واحدة
+      final results = await Future.wait(futures);
 
+      // ✅ معالجة النتائج
+      for (int i = 0; i < results.length; i++) {
+        final response = results[i];
+        final customer = customers[i];
         if (response.statusCode == 200) {
           print(
             'تم إنشاء زيارة للعميل: ${customer['customer_name']} مع الإحداثيات',
@@ -454,12 +473,13 @@ class PosService {
     String closingEntryName,
   ) async {
     try {
-      final futures = invoices.map((invoice) async {
-        return await ApiClient.putJson(
-          '/api/resource/Sales Invoice/${invoice['name']}',
-          {'posa_pos_closing': closingEntryName},
-        );
-      }).toList();
+      final futures =
+          invoices.map((invoice) async {
+            return await ApiClient.putJson(
+              '/api/resource/Sales Invoice/${invoice['name']}',
+              {'posa_pos_closing': closingEntryName},
+            );
+          }).toList();
 
       await Future.wait(futures);
     } catch (e) {
@@ -647,32 +667,33 @@ class PosService {
 
       final paymentMap = <String, double>{};
 
-      final futures = invoices.map((invoice) async {
-        final invoiceName = invoice['name'];
-        final invoiceDetail = await ApiClient.get(
-          '/api/resource/Sales Invoice/$invoiceName',
-        );
+      final futures =
+          invoices.map((invoice) async {
+            final invoiceName = invoice['name'];
+            final invoiceDetail = await ApiClient.get(
+              '/api/resource/Sales Invoice/$invoiceName',
+            );
 
-        if (invoiceDetail.statusCode == 200) {
-          final invoiceData = jsonDecode(invoiceDetail.body)['data'];
-          final payments = <Map<String, dynamic>>[];
+            if (invoiceDetail.statusCode == 200) {
+              final invoiceData = jsonDecode(invoiceDetail.body)['data'];
+              final payments = <Map<String, dynamic>>[];
 
-          if (invoiceData['payments'] != null && invoiceData['payments'] is List) {
-            payments.addAll(List<Map<String, dynamic>>.from(invoiceData['payments']));
-          }
-          else {
-            final method = invoiceData['mode_of_payment']?.toString() ?? 'نقدي';
-            final amount = (invoiceData['grand_total'] as num).toDouble();
-            payments.add({
-              'mode_of_payment': method,
-              'amount': amount,
-            });
-          }
-          
-          return payments;
-        }
-        return <Map<String, dynamic>>[];
-      }).toList();
+              if (invoiceData['payments'] != null &&
+                  invoiceData['payments'] is List) {
+                payments.addAll(
+                  List<Map<String, dynamic>>.from(invoiceData['payments']),
+                );
+              } else {
+                final method =
+                    invoiceData['mode_of_payment']?.toString() ?? 'نقدي';
+                final amount = (invoiceData['grand_total'] as num).toDouble();
+                payments.add({'mode_of_payment': method, 'amount': amount});
+              }
+
+              return payments;
+            }
+            return <Map<String, dynamic>>[];
+          }).toList();
 
       final results = await Future.wait(futures);
 
@@ -989,11 +1010,12 @@ class PosService {
           paymentSummary[method]!['invoice_count'] =
               (paymentSummary[method]!['invoice_count'] as int) + 1;
 
-          (paymentSummary[method]!['invoices'] as List<Map<String, dynamic>>).add({
-            'invoice_number': invoiceName,
-            'amount': amount,
-            'payment_method': method,
-          });
+          (paymentSummary[method]!['invoices'] as List<Map<String, dynamic>>)
+              .add({
+                'invoice_number': invoiceName,
+                'amount': amount,
+                'payment_method': method,
+              });
         }
       }
 
