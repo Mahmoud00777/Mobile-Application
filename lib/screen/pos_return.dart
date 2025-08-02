@@ -375,7 +375,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       );
       Navigator.pop(context);
       Navigator.pop(context);
-      final updatedProducts = await ItemService.getItems(includeStock: false);
+      final updatedProducts = await ItemService.getItemsForReturn();
       setState(() {
         products = updatedProducts;
         filteredProducts = updatedProducts;
@@ -403,10 +403,10 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   ) async {
     String selectedMethod = paymentMethods.first['mode_of_payment'];
     TextEditingController amountController = TextEditingController(
-      text: invoiceTotal.toStringAsFixed(2),
+      text: '0.00',
     );
     TextEditingController notesController = TextEditingController();
-    double paidAmount = invoiceTotal;
+    double paidAmount = 0.0;
     List<File> attachedImages = []; // قائمة لحفظ الصور المرفوعة
 
     return await showDialog<Map<String, dynamic>>(
@@ -464,14 +464,17 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                     TextFormField(
                       controller: amountController,
                       keyboardType: TextInputType.number,
+                      enabled: false,
                       decoration: InputDecoration(
                         labelText: 'المبلغ المسترد',
                         suffixText: 'د.ر',
                         border: OutlineInputBorder(),
+                        filled: true,
+                        fillColor: Colors.grey[200],
                       ),
                       onChanged: (value) {
                         setState(() {
-                          paidAmount = double.tryParse(value) ?? 0.0;
+                          paidAmount = 0.0;
                         });
                       },
                     ),
@@ -520,7 +523,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                     ),
                     SizedBox(height: 10),
                     Text(
-                      'المستحق للعميل: ${(invoiceTotal - paidAmount).toStringAsFixed(2)} د.ر',
+                      'المستحق للعميل: ${invoiceTotal.toStringAsFixed(2)} د.ر',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.red,
@@ -553,16 +556,8 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                       return;
                     }
 
-                    final paid = double.tryParse(amountController.text) ?? 0.0;
-                    final rounded = paid.roundToDouble();
-                    if (rounded != 0) {
-                      MessageService.showWarning(
-                        context,
-                        'يجب ان يكون مبلغ مسترجع صفر',
-                        title: 'فشل في إتمام الإرجاع',
-                      );
-                      return;
-                    }
+                    final paid = 0.0;
+                    final rounded = 0.0;
 
                     List<String> imageUrls = [];
                     if (attachedImages.isNotEmpty) {
@@ -1633,28 +1628,27 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                   barrierColor: Colors.black54,
                   isDismissible: true,
                   enableDrag: false,
-                  builder: (context) => Container(
-                    height: MediaQuery.of(context).size.height * 0.7,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(25),
+                  builder:
+                      (context) => Container(
+                        height: MediaQuery.of(context).size.height * 0.7,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(25),
+                          ),
+                        ),
+                        child: FutureBuilder<Widget>(
+                          future: _ShowListDraftInvoices(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return Center(child: CircularProgressIndicator());
+                            }
+                            return snapshot.data ??
+                                Center(child: Text('حدث خطأ غير متوقع'));
+                          },
+                        ),
                       ),
-                    ),
-                    child: FutureBuilder<Widget>(
-                      future: _ShowListDraftInvoices(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-                        return snapshot.data ??
-                            Center(child: Text('حدث خطأ غير متوقع'));
-                      },
-                    ),
-                  ),
                 );
               },
               backgroundColor: Colors.blue,
@@ -2154,10 +2148,12 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   Future<Widget> _ShowListDraftInvoices() async {
     try {
       final List<SalesInvoiceSummary>? invoices =
-          await SalesInvoice.getDraftSalesinvoice();
+          await SalesInvoice.getDraftSalesReturninvoice();
 
       if (invoices == null || invoices.isEmpty) {
         return Container(
+          width: double.infinity,
+          height: double.infinity,
           padding: EdgeInsets.all(32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -2440,6 +2436,8 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       );
     } catch (e) {
       return Container(
+        width: double.infinity,
+        height: double.infinity,
         padding: EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -2725,21 +2723,21 @@ class ProductCard extends StatelessWidget {
           ),
         ),
         // Quantity on the right
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: _getStockColor(product.qty).withOpacity(0.7),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            product.qty.toStringAsFixed(0),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 8,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
+        // Container(
+        //   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        //   decoration: BoxDecoration(
+        //     color: _getStockColor(product.qty).withOpacity(0.7),
+        //     borderRadius: BorderRadius.circular(4),
+        //   ),
+        //   child: Text(
+        //     product.qty.toStringAsFixed(0),
+        //     style: const TextStyle(
+        //       color: Colors.white,
+        //       fontSize: 8,
+        //       fontWeight: FontWeight.bold,
+        //     ),
+        //   ),
+        // ),
       ],
     );
   }

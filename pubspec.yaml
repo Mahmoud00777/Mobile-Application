@@ -107,3 +107,24 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Flutter Native Splash Configuration
+flutter_native_splash:
+  color: "#60B245"
+  image: assets/images/splash.png
+  android: true
+  ios: true
+  web: false
+  fullscreen: true
+  android_gravity: center
+  ios_content_mode: center
+  branding: assets/images/splash.png
+  branding_mode: bottom
+  color_dark: "#60B245"
+  image_dark: assets/images/splash.png
+  android_12:
+    image: assets/images/splash.png
+    color: "#60B245"
+  android_12_dark:
+    image: assets/images/splash.png
+    color: "#60B245"

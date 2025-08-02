@@ -60,10 +60,10 @@ class ItemService {
       final result = await _processItemsData(
         itemsData,
         posPriceList: posPriceList,
-        warehouse: warehouse, 
-        includePrices: true, 
-        includeStock: true, 
-        includeUOMs: true, 
+        warehouse: warehouse,
+        includePrices: true,
+        includeStock: true,
+        includeUOMs: true,
       );
 
       _cachedFullItems = result;
@@ -121,7 +121,7 @@ class ItemService {
       priceList: priceList,
       forceRefresh: forceRefresh,
     );
-    return items.where((item) => item.qty > 0).toList(); 
+    return items.where((item) => item.qty > 0).toList();
   }
 
   static Future<List<Item>> getItemsForReturn({
@@ -132,7 +132,7 @@ class ItemService {
       priceList: priceList,
       forceRefresh: forceRefresh,
     );
-    return items; 
+    return items;
   }
 
   static Future<List<Item>> getItemsForMaterialRequest({
@@ -148,8 +148,9 @@ class ItemService {
             uom: item.uom,
             additionalUOMs: item.additionalUOMs,
             Item_Default: item.Item_Default,
-            rate: 0.0, 
-            qty: 0.0, 
+            imageUrl: item.imageUrl,
+            rate: 0.0,
+            qty: 0.0,
             discount_amount: 0,
             discount_percentage: 0,
           ),

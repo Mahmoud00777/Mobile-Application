@@ -2408,6 +2408,8 @@ class _POSScreenState extends State<POSScreen> {
 
       if (invoices == null || invoices.isEmpty) {
         return Container(
+          width: double.infinity,
+          height: double.infinity,
           padding: EdgeInsets.all(32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -2690,6 +2692,8 @@ class _POSScreenState extends State<POSScreen> {
       );
     } catch (e) {
       return Container(
+        width: double.infinity,
+        height: double.infinity,
         padding: EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

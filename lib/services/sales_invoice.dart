@@ -588,6 +588,51 @@ class SalesInvoice {
       'pos_profile': posProfile['name'],
       'custom_pos_open_shift': openShiftId,
       'status': 'Draft',
+      'is_return': 0,
+    };
+
+    final query =
+        Uri(
+          queryParameters: {
+            'fields': json.encode([
+              'name',
+              'posting_date',
+              'customer',
+              'grand_total',
+              'custom_pos_open_shift',
+              'is_return',
+              'items',
+              'creation',
+            ]),
+            'filters': json.encode(filters),
+            'order_by': 'creation desc, posting_date desc',
+          },
+        ).query;
+
+    final result = '/api/resource/Sales Invoice?$query';
+
+    final res = await ApiClient.get(result);
+    if (res.statusCode == 200) {
+      final body = json.decode(res.body) as Map<String, dynamic>;
+      final data = body['data'] as List<dynamic>? ?? [];
+      return data
+          .cast<Map<String, dynamic>>()
+          .map((m) => SalesInvoiceSummary.fromJsonMap(m))
+          .toList();
+    }
+    return null;
+  }
+  static Future<List<SalesInvoiceSummary>?> getDraftSalesReturninvoice() async {
+    final prefs = await SharedPreferences.getInstance();
+    final openShiftId = prefs.getString('pos_open');
+    final posName = prefs.getString('selected_pos_profile');
+    final posProfile = json.decode(posName!);
+
+    final filters = {
+      'pos_profile': posProfile['name'],
+      'custom_pos_open_shift': openShiftId,
+      'status': 'Draft',
+      'is_return': 1,
     };
 
     final query =

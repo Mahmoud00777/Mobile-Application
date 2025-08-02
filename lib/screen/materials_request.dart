@@ -372,9 +372,9 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
               child: GridView.builder(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  childAspectRatio: 1.2,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
+                  childAspectRatio: 0.8,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
                 ),
                 itemCount: availableItems.length,
                 itemBuilder: (context, index) {
@@ -390,35 +390,131 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   }
 
   Widget _buildItemCard(Item item) {
+    // Build image URL
+    String? fullImageUrl;
+    print("image = ${item}");
+    if (item.imageUrl != null && item.imageUrl!.isNotEmpty) {
+      String imagePath = item.imageUrl!;
+      print("imagePath = $imagePath");
+      if (!imagePath.startsWith('/')) {
+        imagePath = '/$imagePath';
+      }
+      fullImageUrl = 'https://demo2.ababeel.ly$imagePath';
+    }
+
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.grey[300]!),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         onTap: () => _addToSelectedItems(item),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.itemName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              height: 195,
+              color: Colors.grey.shade200,
+              child: Stack(
+                children: [
+                  // Background image
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
+                      child:
+                          fullImageUrl == null
+                              ? Image.asset(
+                                'assets/images/placeholder.png',
+                                fit: BoxFit.cover,
+                              )
+                              : FadeInImage.assetNetwork(
+                                placeholder: 'assets/images/placeholder.png',
+                                image: fullImageUrl,
+                                fit: BoxFit.cover,
+                                imageErrorBuilder: (
+                                  context,
+                                  error,
+                                  stackTrace,
+                                ) {
+                                  return Image.asset(
+                                    'assets/images/placeholder.png',
+                                    fit: BoxFit.cover,
+                                  );
+                                },
+                              ),
+                    ),
+                  ),
+
+                  // Overlay: item name + code + uom
+                  Positioned(
+                    left: 6,
+                    right: 6,
+                    bottom: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.itemName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          _buildItemDetails(item),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text('الكود: ${item.name}', style: const TextStyle(fontSize: 12)),
-              Text('الوحدة: ${item.uom}', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildItemDetails(Item item) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          item.name,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: primaryColor.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            item.uom,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 8,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1111,9 +1207,9 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2,
-                          childAspectRatio: 1.2,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
+                          childAspectRatio: 0.8,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
                         ),
                     itemCount: 12,
                     itemBuilder: (context, index) {
@@ -1210,44 +1306,75 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   Widget _buildItemSkeleton() {
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.grey[300]!),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 16,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 140,
+            color: Colors.grey[300],
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(12),
+                    ),
+                    child: Container(color: Colors.grey[300]),
+                  ),
+                ),
+                Positioned(
+                  left: 6,
+                  right: 6,
+                  bottom: 6,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          height: 12,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[400],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              height: 8,
+                              width: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[400],
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            Container(
+                              height: 8,
+                              width: 30,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[400],
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Container(
-              height: 12,
-              width: 80,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              height: 12,
-              width: 60,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
