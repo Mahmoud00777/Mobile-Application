@@ -1,9 +1,47 @@
 flutter_native_splash:
- 
-
-  color: "#ffffff"
-  image: assets/images/splash.png
-
+  # صورة الخلفية
+  background_image: "assets/images/splash.png"
   
+  # لون الخلفية
+  background_color: "#60B245"
+  
+  # لون شريط الحالة
+  status_bar_color: "#60B245"
+  
+  # إعدادات الصورة
+  image: "assets/images/splash.png"
+  image_dark: "assets/images/splash.png"
+  
+  # حجم الصورة
+  image_size: 120
+  
+  # تخصيص النص
+  branding: "نظام نقاط البيع"
+  branding_dark: "نظام نقاط البيع"
+  
+  # لون النص
+  color: "#ffffff"
+  color_dark: "#ffffff"
+  
+  # حجم الخط
+  font_size: 24
+  
+  # نوع الخط
+  font_family: "Roboto"
+  
+  # إعدادات إضافية
   android_12:
-    
+    image: "assets/images/splash.png"
+    icon_background_color: "#60B245"
+    image_dark: "assets/images/splash.png"
+    icon_background_color_dark: "#60B245"
+  
+  # إعدادات iOS
+  ios: true
+  
+  # إعدادات Android
+  android: true
+  
+  # إعدادات Web
+  web: true
+  

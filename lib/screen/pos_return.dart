@@ -375,10 +375,44 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       );
       Navigator.pop(context);
       Navigator.pop(context);
-      final updatedProducts = await ItemService.getItemsForReturn();
+      final itemNames =
+          cartItems.map((item) => item['name'].toString()).toList();
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+      final posProfile = json.decode(posProfileJson!);
+      final warehouse = posProfile['warehouse'];
+
+      try {
+        final quantities = await ItemService.updateItemsQuantities(
+          itemNames: itemNames,
+          warehouse: warehouse,
+        );
+
+        for (int i = 0; i < products.length; i++) {
+          final itemName = products[i].name;
+          if (quantities.containsKey(itemName)) {
+            products[i] = products[i].copyWith(qty: quantities[itemName]!);
+          }
+        }
+
+        for (int i = 0; i < filteredProducts.length; i++) {
+          final itemName = filteredProducts[i].name;
+          if (quantities.containsKey(itemName)) {
+            filteredProducts[i] = filteredProducts[i].copyWith(
+              qty: quantities[itemName]!,
+            );
+          }
+        }
+      } catch (e) {
+        print('خطأ في تحديث الكميات: $e');
+        ItemService.clearCache();
+        final updatedProducts = await ItemService.getItems();
+        setState(() {
+          products = updatedProducts;
+          filteredProducts = updatedProducts;
+        });
+      }
       setState(() {
-        products = updatedProducts;
-        filteredProducts = updatedProducts;
         cartItems.clear();
         total = 0.0;
         selectedCustomer = null;

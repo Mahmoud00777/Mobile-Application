@@ -392,7 +392,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   Widget _buildItemCard(Item item) {
     // Build image URL
     String? fullImageUrl;
-    print("image = ${item}");
+    print("image = $item");
     if (item.imageUrl != null && item.imageUrl!.isNotEmpty) {
       String imagePath = item.imageUrl!;
       print("imagePath = $imagePath");

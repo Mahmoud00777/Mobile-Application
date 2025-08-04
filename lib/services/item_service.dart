@@ -17,7 +17,6 @@ class ItemService {
       if (!forceRefresh && _cachedFullItems != null && _lastCacheTime != null) {
         final timeSinceLastCache = DateTime.now().difference(_lastCacheTime!);
         if (timeSinceLastCache < _cacheDuration) {
-          print('استخدام البيانات المخزنة مؤقتاً');
           return _cachedFullItems!;
         }
       }
@@ -121,7 +120,9 @@ class ItemService {
       priceList: priceList,
       forceRefresh: forceRefresh,
     );
-    return items.where((item) => item.qty > 0).toList();
+    print('items: ${items.length}');
+    print('items: ${items.first.toJson()}');
+    return items.toList();
   }
 
   static Future<List<Item>> getItemsForReturn({
@@ -223,6 +224,10 @@ class ItemService {
     List<dynamic> itemsData,
   ) async {
     try {
+      print('🔍 بدء جلب الأسعار...');
+      print('📋 عدد الأصناف: ${itemNames.length}');
+      print('💰 قائمة الأسعار: $posPriceList');
+      
       final preferredUOMs = <String, String>{};
       final stockUOMs = <String, String>{};
 
@@ -233,64 +238,93 @@ class ItemService {
         stockUOMs[itemName] = item['stock_uom'].toString();
       }
 
-      final priceFilters = [
-        '["price_list","=","$posPriceList"]',
-        '["selling","=",1]',
-        '["item_code","in",${json.encode(itemNames)}]',
-        '["uom","in",${json.encode(preferredUOMs.values.toSet().toList() + stockUOMs.values.toSet().toList())}]',
-      ];
+      print('📏 وحدات القياس المفضلة: $preferredUOMs');
+      print('📦 وحدات القياس الأساسية: $stockUOMs');
 
-      final pricesRes = await ApiClient.get(
-        '/api/resource/Item Price?fields=["item_code","price_list_rate","currency","uom"]'
-        '&filters=[${priceFilters.join(',')}]'
-        '&limit_page_length=1000',
-      );
+      const batchSize = 25;
+      final allPricesByItem = <String, List<Map<String, dynamic>>>{};
 
-      if (pricesRes.statusCode == 200) {
-        final pricesData = json.decode(pricesRes.body)['data'] as List;
+      for (var i = 0; i < itemNames.length; i += batchSize) {
+        final batch = itemNames.sublist(
+          i,
+          i + batchSize > itemNames.length ? itemNames.length : i + batchSize,
+        );
 
-        final pricesByItem = <String, List<Map<String, dynamic>>>{};
-        for (final price in pricesData) {
-          final itemCode = price['item_code'].toString();
-          pricesByItem.putIfAbsent(itemCode, () => []).add({
-            'rate':
-                double.tryParse(price['price_list_rate']?.toString() ?? '0') ??
-                0,
-            'uom': price['uom']?.toString(),
-          });
-        }
+        print('🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}');
+        print('📋 عدد الأصناف في هذه المجموعة: ${batch.length}');
 
-        for (final itemName in itemNames) {
-          final preferredUOM = preferredUOMs[itemName];
-          final stockUOM = stockUOMs[itemName];
+        final priceFilters = [
+          '["price_list","=","$posPriceList"]',
+          '["selling","=",1]',
+          '["item_code","in",${json.encode(batch)}]',
+          '["uom","in",${json.encode(preferredUOMs.values.toSet().toList() + stockUOMs.values.toSet().toList())}]',
+        ];
 
-          if (pricesByItem.containsKey(itemName)) {
-            final preferredPrice = pricesByItem[itemName]!.firstWhere(
-              (price) => price['uom'] == preferredUOM,
-              orElse: () => {'rate': 0.0, 'uom': null},
-            );
+        print('🔍 فلاتر الأسعار للمجموعة: $priceFilters');
 
-            if (preferredPrice['rate'] > 0) {
-              pricesMap[itemName] = preferredPrice['rate'];
-            } else {
-              // final stockPrice = pricesByItem[itemName]!.firstWhere(
-              //   (price) => price['uom'] == stockUOM,
-              //   orElse: () => {'rate': 0.0, 'uom': null},
-              // );
-              pricesMap[itemName] = 0.0;
-              // if (stockPrice['rate'] > 0) {
-              //   pricesMap[itemName] = stockPrice['rate'];
-              // } else {
-              //   pricesMap[itemName] = 0.0;
-              // }
-            }
-          } else {
-            pricesMap[itemName] = 0.0;
+        final pricesRes = await ApiClient.get(
+          '/api/resource/Item Price?fields=["item_code","price_list_rate","currency","uom"]'
+          '&filters=[${priceFilters.join(',')}]'
+          '&limit_page_length=1000',
+        );
+
+        print('📡 استجابة الأسعار للمجموعة - Status: ${pricesRes.statusCode}');
+        print('📄 محتوى الاستجابة: ${pricesRes.body}');
+
+        if (pricesRes.statusCode == 200) {
+          final pricesData = json.decode(pricesRes.body)['data'] as List;
+          print('📊 عدد أسعار المستلمة للمجموعة: ${pricesData.length}');
+
+          for (final price in pricesData) {
+            final itemCode = price['item_code'].toString();
+            allPricesByItem.putIfAbsent(itemCode, () => []).add({
+              'rate':
+                  double.tryParse(price['price_list_rate']?.toString() ?? '0') ??
+                  0,
+              'uom': price['uom']?.toString(),
+            });
           }
+        } else {
+          print('❌ فشل في جلب الأسعار للمجموعة: ${pricesRes.statusCode}');
         }
       }
+
+      print('📋 أسعار مجمعة حسب الصنف: $allPricesByItem');
+
+      for (final itemName in itemNames) {
+        final preferredUOM = preferredUOMs[itemName];
+        final stockUOM = stockUOMs[itemName];
+
+        print('🔍 معالجة الصنف: $itemName');
+        print('   - الوحدة المفضلة: $preferredUOM');
+        print('   - الوحدة الأساسية: $stockUOM');
+
+        if (allPricesByItem.containsKey(itemName)) {
+          print('   - يوجد أسعار لهذا الصنف: ${allPricesByItem[itemName]}');
+          
+          final preferredPrice = allPricesByItem[itemName]!.firstWhere(
+            (price) => price['uom'] == preferredUOM,
+            orElse: () => {'rate': 0.0, 'uom': null},
+          );
+
+          print('   - السعر المفضل: $preferredPrice');
+
+          if (preferredPrice['rate'] > 0) {
+            pricesMap[itemName] = preferredPrice['rate'];
+            print('   ✅ تم تعيين السعر: ${preferredPrice['rate']}');
+          } else {
+            pricesMap[itemName] = 0.0;
+            print('   ⚠️ السعر صفر، تم تعيين 0.0');
+          }
+        } else {
+          pricesMap[itemName] = 0.0;
+          print('   ❌ لا يوجد أسعار لهذا الصنف، تم تعيين 0.0');
+        }
+      }
+
+      print('💰 النتيجة النهائية للأسعار: $pricesMap');
     } catch (e) {
-      print('تحذير: فشل جلب الأسعار - $e');
+      print('❌ تحذير: فشل جلب الأسعار - $e');
     }
   }
 
@@ -300,26 +334,54 @@ class ItemService {
     Map<String, double> stockMap,
   ) async {
     try {
-      final stockRes = await ApiClient.get(
-        '/api/resource/Bin?fields=["item_code","actual_qty"]'
-        '&filters=['
-        '["item_code","in",${json.encode(itemNames)}],'
-        '["actual_qty",">","0"],'
-        '["warehouse","=","$warehouse"]'
-        ']'
-        '&limit_page_length=1000',
-      );
+      print('📦 بدء جلب المخزون...');
+      print('🏪 المستودع: $warehouse');
+      print('📋 عدد الأصناف: ${itemNames.length}');
+      print('📋 الأصناف: $itemNames');
 
-      if (stockRes.statusCode == 200) {
-        final stockData = json.decode(stockRes.body)['data'] as List;
-        for (final stock in stockData) {
-          final qty =
-              double.tryParse(stock['actual_qty']?.toString() ?? '0') ?? 0;
-          stockMap[stock['item_code'].toString()] = qty;
+      const batchSize = 25;
+      for (var i = 0; i < itemNames.length; i += batchSize) {
+        final batch = itemNames.sublist(
+          i,
+          i + batchSize > itemNames.length ? itemNames.length : i + batchSize,
+        );
+
+        print('🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}');
+        print('📋 عدد الأصناف في هذه المجموعة: ${batch.length}');
+
+        final stockRes = await ApiClient.get(
+          '/api/resource/Bin?fields=["item_code","actual_qty"]'
+          '&filters=['
+          '["item_code","in",${json.encode(batch)}],'
+          '["actual_qty",">","0"],'
+          '["warehouse","=","$warehouse"]'
+          ']'
+          '&limit_page_length=1000',
+        );
+
+        print('📡 استجابة المخزون للمجموعة - Status: ${stockRes.statusCode}');
+        print('📄 محتوى استجابة المخزون: ${stockRes.body}');
+
+        if (stockRes.statusCode == 200) {
+          final stockData = json.decode(stockRes.body)['data'] as List;
+          print('📊 عدد سجلات المخزون المستلمة للمجموعة: ${stockData.length}');
+          
+          for (final stock in stockData) {
+            print('📦 معالجة سجل مخزون: $stock');
+            final itemCode = stock['item_code'].toString();
+            final qty =
+                double.tryParse(stock['actual_qty']?.toString() ?? '0') ?? 0;
+            stockMap[itemCode] = qty;
+            print('   ✅ الصنف: $itemCode, الكمية: $qty');
+          }
+        } else {
+          print('❌ فشل في جلب المخزون للمجموعة: ${stockRes.statusCode}');
         }
       }
+
+      print('📦 النتيجة النهائية للمخزون: $stockMap');
     } catch (e) {
-      print('تحذير: فشل جلب المخزون - $e');
+      print('❌ تحذير: فشل جلب المخزون - $e');
     }
   }
 
@@ -427,33 +489,57 @@ class ItemService {
     required String warehouse,
   }) async {
     try {
-      final stockRes = await ApiClient.get(
-        '/api/resource/Bin?fields=["item_code","actual_qty"]'
-        '&filters=['
-        '["item_code","in",${json.encode(itemNames)}],'
-        '["actual_qty",">=","0"],'
-        '["warehouse","=","$warehouse"]'
-        ']'
-        '&limit_page_length=1000',
-      );
+      print('🔄 بدء تحديث كميات الأصناف...');
+      print('📋 عدد الأصناف: ${itemNames.length}');
+      print('🏪 المستودع: $warehouse');
+      print('📋 الأصناف: $itemNames');
 
-      if (stockRes.statusCode == 200) {
-        final stockData = json.decode(stockRes.body)['data'] as List;
-        final quantitiesMap = <String, double>{};
+      const batchSize = 25;
+      final quantitiesMap = <String, double>{};
 
-        for (final stock in stockData) {
-          final itemCode = stock['item_code'].toString();
-          final qty =
-              double.tryParse(stock['actual_qty']?.toString() ?? '0') ?? 0;
-          quantitiesMap[itemCode] = qty;
+      for (var i = 0; i < itemNames.length; i += batchSize) {
+        final batch = itemNames.sublist(
+          i,
+          i + batchSize > itemNames.length ? itemNames.length : i + batchSize,
+        );
+
+        print('🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}');
+        print('📋 عدد الأصناف في هذه المجموعة: ${batch.length}');
+
+        final stockRes = await ApiClient.get(
+          '/api/resource/Bin?fields=["item_code","actual_qty"]'
+          '&filters=['
+          '["item_code","in",${json.encode(batch)}],'
+          '["actual_qty",">=","0"],'
+          '["warehouse","=","$warehouse"]'
+          ']'
+          '&limit_page_length=1000',
+        );
+
+        print('📡 استجابة تحديث المخزون للمجموعة - Status: ${stockRes.statusCode}');
+        print('📄 محتوى استجابة تحديث المخزون: ${stockRes.body}');
+
+        if (stockRes.statusCode == 200) {
+          final stockData = json.decode(stockRes.body)['data'] as List;
+          print('📊 عدد سجلات المخزون المستلمة للمجموعة: ${stockData.length}');
+
+          for (final stock in stockData) {
+            print('📦 معالجة سجل مخزون: $stock');
+            final itemCode = stock['item_code'].toString();
+            final qty =
+                double.tryParse(stock['actual_qty']?.toString() ?? '0') ?? 0;
+            quantitiesMap[itemCode] = qty;
+            print('   ✅ الصنف: $itemCode, الكمية: $qty');
+          }
+        } else {
+          print('❌ فشل في جلب كميات الأصناف للمجموعة: ${stockRes.statusCode}');
         }
-
-        return quantitiesMap;
-      } else {
-        throw Exception('فشل في جلب كميات الأصناف: ${stockRes.statusCode}');
       }
+
+      print('📦 النتيجة النهائية لتحديث الكميات: $quantitiesMap');
+      return quantitiesMap;
     } catch (e) {
-      print('خطأ في تحديث كميات الأصناف: $e');
+      print('❌ خطأ في تحديث كميات الأصناف: $e');
       throw Exception('فشل في تحديث كميات الأصناف: ${e.toString()}');
     }
   }

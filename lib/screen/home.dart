@@ -196,7 +196,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
         setState(() {
           _isClosingShift = true;
         });
-        
+
         // ✅ إظهار Loading Overlay فقط عند التأكيد (العمليات الطويلة)
         _showLoadingOverlay();
 
