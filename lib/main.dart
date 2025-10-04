@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:drsaf/services/api_client.dart';
-import 'package:drsaf/splash_screen.dart';
+import 'package:alkhair_daem/services/api_client.dart';
+import 'package:alkhair_daem/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

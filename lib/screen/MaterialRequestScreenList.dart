@@ -1,5 +1,5 @@
-import 'package:drsaf/screen/material_request_detail_page.dart';
-import 'package:drsaf/screen/materials_request.dart';
+import 'package:alkhair_daem/screen/material_request_detail_page.dart';
+import 'package:alkhair_daem/screen/materials_request.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/materials_requestM.dart';

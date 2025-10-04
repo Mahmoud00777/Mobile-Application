@@ -1,17 +1,17 @@
 import 'dart:convert';
 
-import 'package:drsaf/services/api_client.dart';
-import 'package:drsaf/services/auth_service.dart';
+import 'package:alkhair_daem/services/api_client.dart';
+import 'package:alkhair_daem/services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PosService {
   static Future<bool> hasOpenPosEntry() async {
-    final user = await AuthService.getCurrentUser();
+    final user = await AuthService.getValidUserEmail();
     print(user);
     final res = await ApiClient.get(
-      '/api/resource/POS Opening Entry?fields=["name","pos_profile","period_start_date"]&filters=[["docstatus","=",1],["user","=","$user"],["status","=","Open"]]&limit=1',
+      '/api/resource/POS Opening Entry?fields=["name","pos_profile","period_start_date"]&filters=[["docstatus","=",1],["user","=","$user"],["status","=","Open"]]&limit=1&limit_page_length=1000',
     );
     print('hasOpenPosEntry Response: ${res.statusCode} - ${res.body}');
 
@@ -39,7 +39,7 @@ class PosService {
     final posOpeningName = prefs.getString('pos_open');
     try {
       final res = await ApiClient.get(
-        '/api/resource/POS Opening Entry/$posOpeningName?fields=["status"]',
+        '/api/resource/POS Opening Entry/$posOpeningName?fields=["status"]&limit_page_length=1000',
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body)['data'];
@@ -67,9 +67,8 @@ class PosService {
     double cashAmount,
     Map<String, dynamic> posProfile,
   ) async {
-    final user = await AuthService.getCurrentUser();
+    final user = await AuthService.getValidUserEmail();
     print('the current user : $user');
-    if (user == null) throw Exception('المستخدم غير معروف أو غير مسجل الدخول');
 
     final now = DateTime.now().toIso8601String();
     final payments = posProfile['payments'] as List<dynamic>? ?? [];
@@ -126,7 +125,6 @@ class PosService {
     ]);
   }
 
-  // ✅ دالة مساعدة لحفظ البيانات
   static Future<void> _saveToSharedPreferences(
     String name,
     String posTime,
@@ -141,7 +139,7 @@ class PosService {
   ) async {
     try {
       final response = await ApiClient.get(
-        '/api/resource/POS Profile/$posProfileName?fields=["custom_table_customer"]',
+        '/api/resource/POS Profile/$posProfileName?fields=["custom_table_customer"]&limit_page_length=1000',
       );
 
       if (response.statusCode == 200) {
@@ -178,7 +176,7 @@ class PosService {
   ) async {
     try {
       final response = await ApiClient.get(
-        '/api/resource/Customer/$customerName?fields=["name","customer_name","custom_latitude","custom_longitude"]',
+        '/api/resource/Customer/$customerName?fields=["name","customer_name","custom_latitude","custom_longitude"]&limit_page_length=1000',
       );
       print('Submit POS Entry: ${response.statusCode} - ${response.body}');
 
@@ -208,7 +206,6 @@ class PosService {
     required String user,
   }) async {
     try {
-      // ✅ تشغيل جميع إنشاءات الزيارات بالتوازي
       final futures =
           customers.map((customer) async {
             final visitData = {
@@ -251,7 +248,7 @@ class PosService {
     try {
       // جلب جميع أسماء POS Profiles
       final res = await ApiClient.get(
-        '/api/resource/POS Profile?fields=["name"]',
+        '/api/resource/POS Profile?fields=["name"]&limit_page_length=1000',
       );
       print('POS Profile names response: ${res.body}');
 
@@ -265,7 +262,7 @@ class PosService {
         for (var item in profileList) {
           final profileName = item['name'];
           final detailRes = await ApiClient.get(
-            '/api/resource/POS Profile/$profileName',
+            '/api/resource/POS Profile/$profileName?limit_page_length=1000',
           );
 
           if (detailRes.statusCode == 200) {
@@ -304,10 +301,7 @@ class PosService {
     Map<String, dynamic> posProfile,
   ) async {
     try {
-      final user = await AuthService.getCurrentUser();
-      if (user == null) {
-        throw Exception('المستخدم غير معروف أو غير مسجل الدخول');
-      }
+      final user = await AuthService.getValidUserEmail();
 
       final prefs = await SharedPreferences.getInstance();
       final posOpeningName = prefs.getString('pos_open');
@@ -496,7 +490,7 @@ class PosService {
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
         '["status","in",["Paid","Partly Paid","Return","Unpaid"]]'
-        ']&fields=["name","posting_date","grand_total","customer","status","total_qty","paid_amount"]',
+        ']&fields=["name","posting_date","grand_total","customer","status","total_qty","paid_amount"]&limit_page_length=1000',
       );
 
       if (response.statusCode == 200) {
@@ -518,7 +512,7 @@ class PosService {
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
         '["is_return","=","True"]'
-        ']&fields=["name","posting_date","grand_total","customer","status","total_qty"]',
+        ']&fields=["name","posting_date","grand_total","customer","status","total_qty"]&limit_page_length=1000',
       );
 
       if (response.statusCode == 200) {
@@ -532,6 +526,18 @@ class PosService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> get_ShiftInvoices(
+    String posOpeningName,
+  ) async {
+    return _getShiftInvoices(posOpeningName);
+  }
+
+  static Future<List<Map<String, dynamic>>> get_ShiftPayment(
+    String posOpeningName,
+  ) async {
+    return _getShiftPayment(posOpeningName);
+  }
+
   static Future<List<Map<String, dynamic>>> _getShiftPayment(
     String posOpeningName,
   ) async {
@@ -539,7 +545,7 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Payment Entry?filters=['
         '["custom_pos_opening_shift","=","$posOpeningName"]'
-        ']&fields=["name","party_name","paid_amount","mode_of_payment"]',
+        ']&fields=["name","party_name","paid_amount","mode_of_payment"]&limit_page_length=1000',
       );
 
       if (response.statusCode == 200) {
@@ -583,7 +589,7 @@ class PosService {
       '/api/resource/Payment Entry?filters=['
       '["custom_pos_opening_shift","=","$posOpeningName"],'
       '["docstatus","=",1]'
-      ']&fields=["name","posting_date","paid_amount","mode_of_payment"]',
+      ']&fields=["name","posting_date","paid_amount","mode_of_payment"]&limit_page_length=1000',
     );
 
     if (response.statusCode == 200) {
@@ -593,52 +599,6 @@ class PosService {
     }
     return [];
   }
-  // static Future<Map<String, dynamic>> getShiftPaymentEntries(
-  //   String shiftName,
-  // ) async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   final posOpeningName = prefs.getString('pos_open');
-
-  //   final response = await ApiClient.get(
-  //     '/api/resource/Payment Entry?filters=['
-  //     '["custom_pos_opening_shift","=","$posOpeningName"],'
-  //     '["docstatus","=",1]'
-  //     ']&fields=["name","posting_date","paid_amount","mode_of_payment"]',
-  //   );
-
-  //   if (response.statusCode == 200) {
-  //     final data = List<Map<String, dynamic>>.from(
-  //       jsonDecode(response.body)['data'] ?? [],
-  //     );
-
-  //     // تجميع المدفوعات حسب طريقة الدفع
-  //     final paymentSummary = <String, double>{};
-  //     for (final entry in data) {
-  //       final method = entry['mode_of_payment'] ?? 'غير محدد';
-  //       final amount = (entry['paid_amount'] as num).toDouble();
-  //       paymentSummary.update(
-  //         method,
-  //         (value) => value + amount,
-  //         ifAbsent: () => amount,
-  //       );
-  //     }
-
-  //     return {
-  //       'payment_entries': data, // جميع مدفوعات الدخول
-  //       'payment_summary': paymentSummary, // المجموع حسب طريقة الدفع
-  //       'total_payments': paymentSummary.values.fold(
-  //         0.0,
-  //         (sum, amount) => sum + amount,
-  //       ),
-  //     };
-  //   }
-
-  //   return {
-  //     'payment_entries': [],
-  //     'payment_summary': {},
-  //     'total_payments': 0.0,
-  //   };
-  // }
 
   static Future<List<Map<String, dynamic>>> getPaymentMethods() async {
     try {
@@ -654,7 +614,7 @@ class PosService {
         '/api/resource/Sales Invoice?filters=['
         '["custom_pos_open_shift","=","$posOpeningName"],'
         '["docstatus","=",1]'
-        ']&fields=["name"]',
+        ']&fields=["name"]&limit_page_length=1000',
       );
 
       if (invoicesResponse.statusCode != 200) {
@@ -671,7 +631,7 @@ class PosService {
           invoices.map((invoice) async {
             final invoiceName = invoice['name'];
             final invoiceDetail = await ApiClient.get(
-              '/api/resource/Sales Invoice/$invoiceName',
+              '/api/resource/Sales Invoice/$invoiceName?limit_page_length=1000',
             );
 
             if (invoiceDetail.statusCode == 200) {
@@ -725,7 +685,7 @@ class PosService {
         '["custom_pos_open_shift","=","$posOpeningName"],'
         '["status","in",["Paid","Partly Paid","Return","Unpaid"]],'
         '["docstatus","=",1]'
-        ']&fields=["name","posting_date","grand_total","customer"]',
+        ']&fields=["name","posting_date","grand_total","customer"]&limit_page_length=1000',
       );
 
       if (response.statusCode == 200) {
@@ -749,7 +709,7 @@ class PosService {
         '["pos_profile","=","$posOpeningName"],'
         '["creation","like","$todayStr%"],'
         '["select_state","!=","لم تتم زيارة"]'
-        ']&fields=["name","select_state"]',
+        ']&fields=["name","select_state"]&limit_page_length=1000',
       );
       print('getVisitCount: ${response.statusCode} - ${response.body}');
 
@@ -778,7 +738,7 @@ class PosService {
         '["custom_pos_open_shift","=","$posOpeningShift"],'
         '["docstatus","=",1],'
         '["is_return","=",0]'
-        ']&fields=["name"]',
+        ']&fields=["name"]&limit_page_length=1000',
       );
       print('getInvoiceCount: ${response.statusCode} - ${response.body}');
 
@@ -800,7 +760,7 @@ class PosService {
         '/api/resource/Material Request?filters=['
         '["custom_pos_profile","=","$posOpeningName"],'
         '["status","=","Pending"]]'
-        '&fields=["name"]',
+        '&fields=["name"]&limit_page_length=1000',
       );
       print('getOrderCount: ${response.statusCode} - ${response.body}');
 
@@ -820,7 +780,7 @@ class PosService {
       final response = await ApiClient.get(
         '/api/resource/Item?filters=['
         '["is_stock_item","=",1]'
-        ']&fields=["name"]',
+        ']&fields=["name"]&limit_page_length=1000',
       );
 
       if (response.statusCode == 200) {
@@ -848,7 +808,7 @@ class PosService {
         '["custom_pos_open_shift","=","$posOpeningShift"],'
         '["docstatus","=",1],'
         '["is_return","=",1]'
-        ']&fields=["name"]',
+        ']&fields=["name"]&limit_page_length=1000',
       );
       print('getInvoiceCount: ${response.statusCode} - ${response.body}');
 
@@ -867,7 +827,7 @@ class PosService {
     try {
       // 1. جلب بيانات POS Profile من API
       final response = await ApiClient.get(
-        '/api/resource/POS Profile/$posProfileName',
+        '/api/resource/POS Profile/$posProfileName?limit_page_length=1000',
       );
 
       if (response.statusCode == 200) {
@@ -904,7 +864,7 @@ class PosService {
     print("profileName: $profileName");
 
     final response = await ApiClient.get(
-      '/api/resource/POS Profile/$profileName',
+      '/api/resource/POS Profile/$profileName?limit_page_length=1000',
     );
     if (response.statusCode == 200) {
       final data = json.decode(response.body)['data'];
@@ -953,7 +913,7 @@ class PosService {
         '["custom_pos_open_shift","=","$posOpeningName"],'
         '["docstatus","=",1],'
         '["status","in",["Paid","Partly Paid"]]'
-        ']&fields=["name","grand_total","paid_amount"]',
+        ']&fields=["name","grand_total","paid_amount"]&limit_page_length=1000',
       );
 
       if (invoicesResponse.statusCode != 200) {
@@ -976,7 +936,7 @@ class PosService {
         totalGrandTotal += grandTotal;
 
         final detailResponse = await ApiClient.get(
-          '/api/resource/Sales Invoice/$invoiceName?fields=["payments"]',
+          '/api/resource/Sales Invoice/$invoiceName?fields=["payments"]&limit_page_length=1000',
         );
         if (detailResponse.statusCode != 200) continue;
         final detailData = jsonDecode(detailResponse.body)['data'];

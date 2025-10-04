@@ -1,7 +1,8 @@
-import 'package:drsaf/screen/PosOpeningPage.dart';
-import 'package:drsaf/screen/home.dart';
-import 'package:drsaf/services/auth_service.dart';
-import 'package:drsaf/services/pos_service.dart';
+import 'package:alkhair_daem/Class/message_service.dart';
+import 'package:alkhair_daem/screen/PosOpeningPage.dart';
+import 'package:alkhair_daem/screen/home.dart';
+import 'package:alkhair_daem/services/auth_service.dart';
+import 'package:alkhair_daem/services/pos_service.dart';
 import 'package:flutter/material.dart';
 
 class AppColors {
@@ -70,12 +71,14 @@ class _LoginState extends State<Login> {
   final _formLoginKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _passwordFocusNode = FocusNode();
   bool _isLoading = false;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -141,6 +144,13 @@ class _LoginState extends State<Login> {
                                         const SizedBox(height: 20),
                                         TextFormField(
                                           controller: _emailController,
+                                          textInputAction: TextInputAction.next,
+                                          onFieldSubmitted: (value) {
+                                            // عند الضغط على Enter، انتقل إلى حقل كلمة المرور
+                                            FocusScope.of(
+                                              context,
+                                            ).requestFocus(_passwordFocusNode);
+                                          },
                                           decoration: InputDecoration(
                                             labelText: 'البريد الإلكتروني',
                                             suffixIcon: const Icon(
@@ -177,7 +187,13 @@ class _LoginState extends State<Login> {
                                         const SizedBox(height: 20),
                                         TextFormField(
                                           controller: _passwordController,
+                                          focusNode: _passwordFocusNode,
                                           obscureText: true,
+                                          textInputAction: TextInputAction.done,
+                                          onFieldSubmitted: (value) {
+                                            // عند الضغط على Enter في حقل كلمة المرور، قم بتسجيل الدخول
+                                            _handleLogin();
+                                          },
                                           decoration: InputDecoration(
                                             labelText: 'كلمة المرور',
                                             suffixIcon: const Icon(
@@ -298,21 +314,14 @@ class _LoginState extends State<Login> {
           );
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('بيانات الدخول غير صحيحة'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        MessageService.showError(context, 'بيانات الدخول غير صحيحة');
       }
     } catch (e) {
       if (mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('حدث خطأ أثناء تسجيل الدخول: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        MessageService.showError(
+          context,
+          'حدث خطأ أثناء تسجيل الدخول: ${e.toString()}',
         );
       }
     } finally {

@@ -1,5 +1,5 @@
-import 'package:drsaf/models/payment_entry_report';
-import 'package:drsaf/screen/payment_details.dart';
+import 'package:alkhair_daem/models/payment_entry_report';
+import 'package:alkhair_daem/screen/payment_details.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';

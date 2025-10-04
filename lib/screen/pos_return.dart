@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'package:drsaf/models/sales_invoice_summary.dart';
-import 'package:drsaf/services/api_client.dart';
-import 'package:drsaf/services/visit_service.dart';
-import 'package:drsaf/Class/message_service.dart';
+import 'package:alkhair_daem/models/sales_invoice_summary.dart';
+import 'package:alkhair_daem/services/api_client.dart';
+import 'package:alkhair_daem/services/visit_service.dart';
+import 'package:alkhair_daem/Class/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:sunmi_printer_plus/sunmi_printer_plus.dart';
 import '../services/sales_invoice.dart';
 import '../services/item_service.dart';
 import '../services/customer_service.dart';
@@ -17,10 +18,7 @@ import '../models/Item.dart';
 import '../models/customer.dart';
 import '../services/pos_service.dart';
 import 'package:flutter/services.dart';
-import 'package:sunmi_printer_plus/core/enums/enums.dart';
-import 'package:sunmi_printer_plus/core/styles/sunmi_text_style.dart';
-import 'package:sunmi_printer_plus/core/sunmi/sunmi_printer.dart';
-import 'package:sunmi_printer_plus/core/types/sunmi_column.dart';
+
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:intl/intl.dart' show DateFormat;
 
@@ -52,11 +50,21 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
   bool? hasInternet;
   String? invoDraftName;
 
+  // متغيرات البحث الذكي
+  bool _isLoadingMore = false;
+  bool _hasMoreItems = true;
+  int _currentPage = 0;
+  final int _pageSize = 15;
+  final String _currentSearchQuery = '';
+  String? _currentItemGroup;
+  bool _isSearching = false;
+  Timer? _searchDebounceTimer;
+
   @override
   void initState() {
     super.initState();
     _fetchProfileAndInitialize();
-    searchController.addListener(_filterProducts);
+    searchController.addListener(_onSearchChanged);
   }
 
   Future<void> _fetchProfileAndInitialize() async {
@@ -72,7 +80,10 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
+    _loadingTimer?.cancel();
     searchController.dispose();
+    ItemService.clearCache();
     super.dispose();
   }
 
@@ -84,28 +95,56 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     });
 
     try {
-      final results = await Future.wait([
-        _loadProducts(),
-        _loadCustomers(),
-        _loadPosProfile(),
-      ]);
+      // تحميل العملاء وإعدادات POS
+      final results = await Future.wait([_loadCustomers(), _loadPosProfile()]);
 
       if (mounted) {
         setState(() {
-          products = results[0] as List<Item>;
-          filteredProducts = products;
-          customers = results[1] as List<Customer>;
-          // selectedCustomer = results[2] as Customer?;
-          isLoading = false;
-          isFirstLoad = false;
+          customers = results[0] as List<Customer>;
+          // selectedCustomer = results[1] as Customer?;
         });
       }
+
+      // تحميل الأصناف الأساسية في الخلفية
+      await _preloadEssentialItemsOnStart();
     } catch (e) {
       if (mounted) {
         _handleError(e);
       }
     } finally {
       _loadingTimer?.cancel();
+    }
+  }
+
+  // تحميل الأصناف الأساسية في الخلفية
+  Future<void> _preloadEssentialItemsOnStart() async {
+    try {
+      print('🔄 بدء تحميل الأصناف الأساسية للترجيع...');
+
+      final results = await Future.wait([
+        ItemService.getEssentialItems(limit: 12),
+        ItemService.getItemGroups(),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          products = results[0] as List<Item>;
+          filteredProducts = products;
+          itemGroups = results[1] as List<String>;
+          isLoading = false;
+          isFirstLoad = false;
+        });
+      }
+
+      print('✅ تم تحميل ${products.length} صنف أساسي للترجيع');
+    } catch (e) {
+      print('❌ خطأ في تحميل الأصناف الأساسية للترجيع: $e');
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          isFirstLoad = false;
+        });
+      }
     }
   }
 
@@ -150,23 +189,147 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     );
   }
 
-  void _filterProducts() {
-    final searchTerm = searchController.text.toLowerCase();
+  // البحث المحلي السريع
+  void _searchLocally() {
+    final query = searchController.text.trim();
+    final group = selectedItemGroup;
 
     setState(() {
-      filteredProducts =
-          products.where((product) {
-            final matchesSearch = product.itemName.toLowerCase().contains(
-              searchTerm,
-            );
-            product.name.toLowerCase().contains(searchTerm);
-            final matchesGroup = selectedItemGroup == null;
-            selectedItemGroup!.isEmpty;
-            product.itemGroup == selectedItemGroup;
-
-            return matchesSearch && matchesGroup;
-          }).toList();
+      _isSearching = false;
+      filteredProducts = ItemService.searchItemsLocally(
+        query: query,
+        items: products,
+        itemGroup: group,
+      );
     });
+  }
+
+  // البحث على السيرفر
+  Future<void> _searchOnServer() async {
+    final query = searchController.text.trim();
+    final group = selectedItemGroup;
+
+    if (query.isEmpty && group == null) {
+      setState(() {
+        filteredProducts = products;
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    try {
+      final searchResults = await ItemService.getItemsWithSearch(
+        query: query,
+        itemGroup: group,
+        limit: 100,
+      );
+
+      if (mounted) {
+        setState(() {
+          filteredProducts = searchResults;
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في البحث على السيرفر: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
+
+  // معالج تغيير البحث مع debounce
+  void _onSearchChanged() {
+    _searchDebounceTimer?.cancel();
+
+    // البحث المحلي فوراً
+    _searchLocally();
+
+    // البحث على السيرفر بعد 800ms
+    _searchDebounceTimer = Timer(Duration(milliseconds: 800), () {
+      _searchOnServer();
+    });
+  }
+
+  // تحميل المزيد من الأصناف
+  Future<void> _loadMoreProducts() async {
+    if (_isLoadingMore || !_hasMoreItems) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final query = searchController.text.trim();
+      final group = selectedItemGroup;
+
+      final moreItems = await ItemService.getItemsPaginated(
+        query: query.isEmpty ? null : query,
+        itemGroup: group,
+        page: _currentPage,
+        pageSize: _pageSize,
+      );
+
+      if (mounted) {
+        setState(() {
+          if (moreItems.isNotEmpty) {
+            filteredProducts.addAll(moreItems);
+            _currentPage++;
+            _hasMoreItems = moreItems.length == _pageSize;
+          } else {
+            _hasMoreItems = false;
+          }
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل المزيد من الأصناف: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  // تحميل الأصناف حسب المجموعة
+  Future<void> _loadProductsByGroup() async {
+    if (selectedItemGroup == null) {
+      setState(() {
+        filteredProducts = products;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    try {
+      final groupItems = await ItemService.getItemsByGroup(
+        itemGroup: selectedItemGroup!,
+      );
+
+      if (mounted) {
+        setState(() {
+          filteredProducts = groupItems;
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل الأصناف حسب المجموعة: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
   }
 
   void _increaseQuantity(int index, [Function? setModalState]) {
@@ -300,6 +463,44 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         title: 'فشل في إتمام الإرجاع',
       );
     }
+  }
+
+  void _resetAllState([Function? setModalState]) {
+    setState(() {
+      // تنظيف السلة والعميل
+      cartItems.clear();
+      total = 0.0;
+      selectedCustomer = null;
+      invoDraftName = null;
+
+      // تنظيف متغيرات البحث
+      _currentItemGroup = null;
+      selectedItemGroup = null;
+      searchController.clear();
+
+      // إعادة تعيين متغيرات التحميل التدريجي
+      _currentPage = 0;
+      _hasMoreItems = true;
+      _isLoadingMore = false;
+      _isSearching = false;
+
+      // إعادة عرض جميع المنتجات
+      filteredProducts = List.from(products);
+    });
+    setModalState?.call(() {});
+    print('🔄 تم تنظيف جميع المتغيرات وإعادة تعيين الحالة');
+    print('📋 المتغيرات التي تم تنظيفها:');
+    print('   - cartItems: ${cartItems.length} عنصر');
+    print('   - total: $total');
+    print('   - selectedCustomer: ${selectedCustomer?.customerName ?? "null"}');
+    print('   - invoDraftName: $invoDraftName');
+    print('   - _currentSearchQuery: "$_currentSearchQuery"');
+    print('   - _currentItemGroup: $_currentItemGroup');
+    print('   - selectedItemGroup: $selectedItemGroup');
+    print('   - _currentPage: $_currentPage');
+    print('   - _hasMoreItems: $_hasMoreItems');
+    print('   - _isLoadingMore: $_isLoadingMore');
+    print('   - _isSearching: $_isSearching');
   }
 
   Future<void> _completeSale(Map<String, dynamic> paymentData) async {
@@ -483,7 +684,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<String>(
-                      value: selectedMethod,
+                      initialValue: selectedMethod,
                       items:
                           paymentMethods.map((method) {
                             return DropdownMenuItem<String>(
@@ -658,7 +859,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
           // Dropdown تصفية حسب المجموعة
           Expanded(
             child: DropdownButtonFormField<String>(
-              value: selectedItemGroup,
+              initialValue: selectedItemGroup,
               decoration: InputDecoration(
                 labelText: 'تصفية حسب المجموعة',
                 labelStyle: TextStyle(color: primaryColor),
@@ -680,8 +881,8 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
               onChanged: (value) {
                 setState(() {
                   selectedItemGroup = value;
-                  _filterProducts();
                 });
+                _loadProductsByGroup();
               },
             ),
           ),
@@ -715,7 +916,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                   hintText: 'ادخل اسم المنتج...',
                   leading: Icon(Icons.search),
                   onChanged: (value) {
-                    _filterProducts(); // فلترة مباشرة أثناء الكتابة
+                    _onSearchChanged(); // البحث الذكي أثناء الكتابة
                   },
                 ),
                 SizedBox(height: 10),
@@ -1134,7 +1335,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
                     ),
                     SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: selectedUnit,
+                      initialValue: selectedUnit,
                       items:
                           availableUnits.map((unit) {
                             return DropdownMenuItem<String>(
@@ -1242,7 +1443,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
         '["uom","=","$unit"],'
         '["price_list","=","$priceList"],'
         '["selling","=",1]'
-        ']',
+        ']&limit_page_length=1000',
       );
       print(
         'GET Price => status: ${response.statusCode}, body: ${response.body}',
@@ -1444,7 +1645,7 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     final formattedDate = DateFormat('yyyy-MM-dd – HH:mm').format(now);
     await SunmiPrinter.initPrinter();
     await SunmiPrinter.startTransactionPrint(true);
-    await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
+    // await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
     await SunmiPrinter.printText(
       'فاتورة إرجاع',
       style: SunmiTextStyle(
@@ -1549,17 +1750,17 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
     );
     await SunmiPrinter.printText(
-      'شكرًا لكم!',
+      'شكرًا لتعاملكم معنا',
       style: SunmiTextStyle(
         bold: true,
         fontSize: 35,
         align: SunmiPrintAlign.CENTER,
       ),
     );
-    await SunmiPrinter.printText(
-      'نتمنى لكم يوماً سعيداً 😊',
-      style: SunmiTextStyle(fontSize: 30, align: SunmiPrintAlign.CENTER),
-    );
+    // await SunmiPrinter.printText(
+    //   'نتمنى لكم يوماً سعيداً 😊',
+    //   style: SunmiTextStyle(fontSize: 30, align: SunmiPrintAlign.CENTER),
+    // );
     await SunmiPrinter.lineWrap(3);
     await SunmiPrinter.cutPaper();
   }
@@ -1808,22 +2009,46 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
           _buildFilterSection(),
           Expanded(
             flex: 4,
-            child: GridView.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                childAspectRatio: 0.6,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-              ),
-              padding: EdgeInsets.all(8),
-              itemCount: filteredProducts.length,
-              itemBuilder: (context, index) {
-                return ProductCard(
-                  product: filteredProducts[index],
-                  onTap: () => addToCart(filteredProducts[index]),
-                );
-              },
-            ),
+            child:
+                _isSearching
+                    ? Center(child: _buildSearchIndicator())
+                    : filteredProducts.isEmpty
+                    ? Center(child: _buildNoResultsMessage())
+                    : NotificationListener<ScrollNotification>(
+                      onNotification: (ScrollNotification scrollInfo) {
+                        if (scrollInfo.metrics.pixels ==
+                            scrollInfo.metrics.maxScrollExtent) {
+                          if (!_isLoadingMore && _hasMoreItems) {
+                            _loadMoreProducts();
+                          }
+                        }
+                        return false;
+                      },
+                      child: GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          childAspectRatio: 0.6,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
+                        padding: EdgeInsets.all(8),
+                        itemCount:
+                            filteredProducts.length + (_isLoadingMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == filteredProducts.length) {
+                            // عرض مؤشر التحميل في المنتصف
+                            return Container(
+                              alignment: Alignment.center,
+                              child: _buildLoadMoreIndicator(),
+                            );
+                          }
+                          return ProductCard(
+                            product: filteredProducts[index],
+                            onTap: () => addToCart(filteredProducts[index]),
+                          );
+                        },
+                      ),
+                    ),
           ),
         ],
       ),
@@ -2138,9 +2363,203 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
     );
   }
 
+  // مؤشر البحث محسن
+  Widget _buildSearchIndicator() {
+    return Center(
+      child: Container(
+        padding: EdgeInsets.all(20),
+        margin: EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // دائرة التحميل المتحركة
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                color: primaryColor,
+                strokeWidth: 3,
+                backgroundColor: primaryColor.withOpacity(0.1),
+              ),
+            ),
+            SizedBox(height: 12),
+            // النص
+            Text(
+              'جاري البحث...',
+              style: TextStyle(
+                fontSize: 13,
+                color: primaryColor,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 6),
+            // نص فرعي
+            Text(
+              'يرجى الانتظار',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[500],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // رسالة عدم وجود نتائج محسنة
+  Widget _buildNoResultsMessage() {
+    return Center(
+      child: Container(
+        padding: EdgeInsets.all(24),
+        margin: EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // أيقونة مع تأثير
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 36,
+                color: Colors.grey[400],
+              ),
+            ),
+            SizedBox(height: 16),
+            // النص الرئيسي
+            Text(
+              'لا توجد نتائج',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 8),
+            // نص فرعي
+            Text(
+              'جرب تغيير كلمات البحث',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[500],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 4),
+            // نص إضافي
+            Text(
+              'أو اختر مجموعة مختلفة',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[400],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // مؤشر تحميل المزيد محسن
+  Widget _buildLoadMoreIndicator() {
+    return Center(
+      child: Container(
+        margin: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+          ],
+          border: Border.all(color: primaryColor.withOpacity(0.1), width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // أيقونة التحميل المتحركة
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                color: primaryColor,
+                strokeWidth: 2,
+                backgroundColor: primaryColor.withOpacity(0.1),
+              ),
+            ),
+            SizedBox(width: 8),
+            // النص المختصر
+            Flexible(
+              child: Text(
+                'جاري التحميل...',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: primaryColor,
+                ),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveInvoice() async {
     if (invoDraftName != null) {
-      MessageService.showWarning(context, "لايمكنك حفظ فاتورة معلقة");
+      final invoiceSave = await SalesInvoice.updateReturnDraftSalesInvoice(
+        invoName: invoDraftName!,
+        customer: selectedCustomer!,
+        items: cartItems,
+        total: 0,
+        paidAmount: 0,
+      );
+      if (invoiceSave['success']) {
+        MessageService.showSuccess(context, "تم تحديث الفاتورة معلقة بنجاح");
+        _resetAllState();
+        return;
+      }
+      MessageService.showWarning(context, invoiceSave['message']);
       return;
     }
     if (selectedCustomer == null) {
@@ -2615,7 +3034,8 @@ class _POSReturbScreenState extends State<POSReturnScreen> {
       final success = await SalesInvoice.deleteInvoice(invoiceNumber);
       if (success) {
         MessageService.showSuccess(context, "تم حذف الفاتورة المعلقة بنجاح");
-        setState(() {});
+        _resetAllState();
+        return;
       }
     } catch (e) {
       MessageService.showWarning(context, "لم يتم حذف الفاتورة المعلقة ");
@@ -2662,7 +3082,7 @@ class ProductCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              height: 170,
+              height: MediaQuery.of(context).size.height * 0.29,
               color: Colors.grey.shade200,
               child: Stack(
                 children: [

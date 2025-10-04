@@ -3,17 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:drsaf/Class/message_service.dart';
-import 'package:drsaf/models/sales_invoice_summary.dart';
-import 'package:drsaf/services/api_client.dart';
+import 'package:sunmi_printer_plus/sunmi_printer_plus.dart';
+import '../Class/message_service.dart';
+import '../models/sales_invoice_summary.dart';
+import '../services/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sunmi_printer_plus/core/enums/enums.dart';
-import 'package:sunmi_printer_plus/core/styles/sunmi_text_style.dart';
-import 'package:sunmi_printer_plus/core/sunmi/sunmi_printer.dart';
-import 'package:sunmi_printer_plus/core/types/sunmi_column.dart';
 import '../services/sales_invoice.dart';
 import '../services/item_service.dart';
 import '../services/customer_service.dart';
@@ -50,11 +47,26 @@ class _POSScreenState extends State<POSScreen> {
   final Color blackColor = Color(0xFF383838);
   bool? hasInternet;
 
+  // متغير لمنع التحديثات المتزامنة
+  bool _isUpdatingCart = false;
+
+  // متغيرات التحسين التدريجي
+  bool _isLoadingMore = false;
+  bool _hasMoreItems = true;
+  int _currentPage = 0;
+  final int _pageSize = 15;
+  String _currentSearchQuery = '';
+  String? _currentItemGroup;
+  bool _isSearching = false;
+  Timer? _searchDebounceTimer;
+
   @override
   void initState() {
     super.initState();
     _fetchProfileAndInitialize();
-    searchController.addListener(_filterProducts);
+    searchController.addListener(_onSearchChanged);
+    // تحميل الأصناف فوراً بدون تأخير
+    _preloadEssentialItemsOnStart();
   }
 
   Future<void> _fetchProfileAndInitialize() async {
@@ -71,6 +83,25 @@ class _POSScreenState extends State<POSScreen> {
   @override
   void dispose() {
     searchController.dispose();
+    _searchDebounceTimer?.cancel();
+    _loadingTimer?.cancel();
+    // مسح التخزين المؤقت عند الخروج
+    ItemService.clearCache();
+    _clearProductsCache(); // مسح cache المنتجات المحلي
+
+    // تنظيف نهائي لجميع المتغيرات
+    cartItems.clear();
+    total = 0.0;
+    selectedCustomer = null;
+    invoDraftName = null;
+    _currentSearchQuery = '';
+    _currentItemGroup = null;
+    selectedItemGroup = null;
+    _currentPage = 0;
+    _hasMoreItems = true;
+    _isLoadingMore = false;
+    _isSearching = false;
+
     super.dispose();
   }
 
@@ -84,6 +115,7 @@ class _POSScreenState extends State<POSScreen> {
         connectivityResult.first == ConnectivityResult.ethernet) {
       realInternet = await checkRealInternet();
     }
+    if (!mounted) return;
     setState(() {
       hasInternet = realInternet;
       print("************$hasInternet");
@@ -94,42 +126,50 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   Future<void> _initializeData() async {
-    _loadingTimer = Timer(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      if (isFirstLoad) {
-        setState(() => isFirstLoad = false);
-      }
-    });
-
     try {
-      final results = await Future.wait([
-        _loadProducts(),
-        _loadCustomers(),
-        // _loadPosProfile(),
-      ]);
+      // تحميل العملاء فقط (الأصناف تم تحميلها مسبقاً)
+      final customer = await _loadCustomers();
 
       if (!mounted) return;
       setState(() {
-        products = results[0] as List<Item>;
-        filteredProducts = products;
-        customers = results[1] as List<Customer>;
-        // selectedCustomer = results[2] as Customer?;
-        isLoading = false;
+        customers = customer;
+        // لا نحتاج لتغيير isLoading لأن _preloadEssentialItemsOnStart تقوم بذلك
         isFirstLoad = false;
       });
     } catch (e) {
       _handleError(e);
-    } finally {
-      _loadingTimer?.cancel();
     }
   }
 
-  Future<List<Item>> _loadProducts() async {
-    itemGroups = await ItemService.getItemGroups();
-    final items = await ItemService.getItemsForPOS();
-    final filteredItems =
-        items.where((item) => itemGroups.contains(item.itemGroup)).toList();
-    return filteredItems;
+  Future<void> _preloadEssentialItemsOnStart() async {
+    try {
+      print('🔄 بدء تحميل الأصناف الأساسية...');
+
+      if (!mounted) return;
+
+      final essentialItems = await ItemService.getEssentialItems(limit: 15);
+      final itemGroupsList = await ItemService.getItemGroups();
+
+      if (mounted) {
+        setState(() {
+          products =
+              essentialItems
+                  .where((item) => itemGroupsList.contains(item.itemGroup))
+                  .toList();
+          filteredProducts = List.from(products);
+          itemGroups = itemGroupsList;
+          isLoading = false; // ⭐ إيقاف شاشة التحميل فوراً
+        });
+        print('✅ تم تحميل ${products.length} صنف أساسي');
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل الأصناف: $e');
+      if (mounted) {
+        setState(() {
+          isLoading = false; // ⭐ إيقاف شاشة التحميل حتى في حالة الخطأ
+        });
+      }
+    }
   }
 
   Future<List<Customer>> _loadCustomers() async {
@@ -171,27 +211,498 @@ class _POSScreenState extends State<POSScreen> {
     );
   }
 
-  void _filterProducts() {
-    final searchTerm = searchController.text.toLowerCase();
+  void _searchLocally() {
+    if (_currentSearchQuery.isEmpty && _currentItemGroup == null) {
+      setState(() {
+        filteredProducts = List.from(products);
+        _isSearching = false;
+      });
+      return;
+    }
+
+    final localResults = ItemService.searchItemsLocally(
+      query: _currentSearchQuery,
+      items: products,
+      itemGroup: _currentItemGroup,
+    );
 
     setState(() {
-      filteredProducts =
-          products.where((product) {
-            final matchesSearch =
-                product.itemName.toLowerCase().contains(searchTerm) ||
-                product.name.toLowerCase().contains(searchTerm);
-
-            final matchesGroup =
-                selectedItemGroup == null ||
-                selectedItemGroup!.isEmpty ||
-                product.itemGroup == selectedItemGroup;
-
-            return matchesSearch && matchesGroup;
-          }).toList();
+      filteredProducts = localResults;
+      _isSearching = false;
     });
+
+    print('🔍 البحث المحلي: ${localResults.length} نتيجة');
+  }
+
+  Future<void> _searchOnServer() async {
+    if (_currentSearchQuery.isEmpty && _currentItemGroup == null) return;
+
+    try {
+      setState(() {
+        _isSearching = true;
+      });
+
+      final serverResults = await ItemService.getItemsWithSearch(
+        query: _currentSearchQuery,
+        itemGroup: _currentItemGroup,
+        limit: 100,
+      );
+
+      if (mounted) {
+        setState(() {
+          // تحديث القائمة المعروضة
+          filteredProducts = serverResults;
+
+          // إضافة الأصناف الجديدة للقائمة الرئيسية (بدون حذف القديمة)
+          for (final newItem in serverResults) {
+            final existingIndex = products.indexWhere(
+              (p) => p.itemName == newItem.itemName,
+            );
+            if (existingIndex == -1) {
+              // إضافة الصنف الجديد
+              products.add(newItem);
+              print(
+                '➕ تم إضافة صنف جديد للقائمة الرئيسية: ${newItem.itemName}',
+              );
+            } else {
+              // تحديث بيانات الصنف الموجود
+              products[existingIndex] = newItem;
+              print('🔄 تم تحديث صنف موجود: ${newItem.itemName}');
+            }
+            // إضافة للـ cache السريع
+            _productsCache[newItem.itemName] = newItem;
+          }
+
+          _isSearching = false;
+        });
+        print('🔍 البحث على السيرفر: ${serverResults.length} نتيجة');
+        print('📦 القائمة الرئيسية تحتوي الآن على: ${products.length} صنف');
+      }
+    } catch (e) {
+      print('❌ خطأ في البحث على السيرفر: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
+
+  void _onSearchChanged() {
+    final searchTerm = searchController.text.trim();
+    final newItemGroup = selectedItemGroup;
+
+    // إلغاء البحث السابق
+    _searchDebounceTimer?.cancel();
+
+    // تحديث المتغيرات الحالية
+    _currentSearchQuery = searchTerm;
+    _currentItemGroup = newItemGroup;
+
+    // البحث المحلي فوراً
+    _searchLocally();
+
+    // البحث على السيرفر بعد تأخير
+    if (searchTerm.isNotEmpty || newItemGroup != null) {
+      _searchDebounceTimer = Timer(Duration(milliseconds: 800), () {
+        _searchOnServer();
+      });
+    }
+  }
+
+  // تحميل المزيد من الأصناف
+  Future<void> _loadMoreProducts() async {
+    if (_isLoadingMore || !_hasMoreItems) return;
+
+    try {
+      setState(() {
+        _isLoadingMore = true;
+      });
+
+      final moreItems = await ItemService.getItemsPaginated(
+        query: _currentSearchQuery.isEmpty ? null : _currentSearchQuery,
+        itemGroup: _currentItemGroup,
+        page: _currentPage + 1,
+        pageSize: _pageSize,
+      );
+
+      if (mounted) {
+        setState(() {
+          if (moreItems.isNotEmpty) {
+            filteredProducts.addAll(moreItems);
+            _currentPage++;
+            _hasMoreItems = moreItems.length == _pageSize;
+          } else {
+            _hasMoreItems = false;
+          }
+          _isLoadingMore = false;
+        });
+        print('📄 تم تحميل ${moreItems.length} صنف إضافي');
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل المزيد: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  // تحميل الأصناف حسب المجموعة
+  Future<void> _loadProductsByGroup(String? group) async {
+    if (group == null || group.isEmpty) {
+      _onSearchChanged();
+      return;
+    }
+
+    try {
+      setState(() {
+        _isSearching = true;
+        selectedItemGroup = group;
+        _currentItemGroup = group;
+      });
+
+      final groupItems = await ItemService.getItemsByGroup(itemGroup: group);
+
+      if (mounted) {
+        setState(() {
+          filteredProducts = groupItems;
+          _isSearching = false;
+        });
+        print('📦 تم تحميل ${groupItems.length} صنف لمجموعة $group');
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل مجموعة $group: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
+
+  void _filterProducts() {
+    // استخدام البحث المحسن
+    _onSearchChanged();
+  }
+
+  // مؤشر البحث محسن
+  Widget _buildSearchIndicator() {
+    return Center(
+      child: Container(
+        padding: EdgeInsets.all(20),
+        margin: EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // دائرة التحميل المتحركة
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                color: primaryColor,
+                strokeWidth: 3,
+                backgroundColor: primaryColor.withOpacity(0.1),
+              ),
+            ),
+            SizedBox(height: 12),
+            // النص
+            Text(
+              'جاري البحث...',
+              style: TextStyle(
+                fontSize: 13,
+                color: primaryColor,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 6),
+            // نص فرعي
+            Text(
+              'يرجى الانتظار',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[500],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // رسالة عدم وجود نتائج محسنة
+  Widget _buildNoResultsMessage() {
+    return Center(
+      child: Container(
+        padding: EdgeInsets.all(24),
+        margin: EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // أيقونة مع تأثير
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 36,
+                color: Colors.grey[400],
+              ),
+            ),
+            SizedBox(height: 16),
+            // النص الرئيسي
+            Text(
+              'لا توجد نتائج',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 6),
+            // النص الفرعي
+            Text(
+              'جرب البحث بكلمات مختلفة',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[500],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 8),
+            // نص إضافي
+            Text(
+              'أو اختر مجموعة مختلفة',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[400],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadMoreIndicator() {
+    return Center(
+      child: Container(
+        margin: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+          ],
+          border: Border.all(color: primaryColor.withOpacity(0.1), width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // أيقونة التحميل المتحركة
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                color: primaryColor,
+                strokeWidth: 2,
+                backgroundColor: primaryColor.withOpacity(0.1),
+              ),
+            ),
+            SizedBox(width: 8),
+            // النص المختصر
+            Flexible(
+              child: Text(
+                'جاري التحميل...',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: primaryColor,
+                ),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // تحديث الأصناف المحسن
+  Future<void> _refreshProductsOptimized() async {
+    try {
+      setState(() {
+        _isSearching = true;
+      });
+
+      // مسح التخزين المؤقت وإعادة تحميل الأصناف الأساسية
+      ItemService.clearCache();
+
+      final essentialItems = await ItemService.getEssentialItems(
+        limit: 50,
+        forceRefresh: true,
+      );
+      final itemGroupsList = await ItemService.getItemGroups();
+
+      if (mounted) {
+        setState(() {
+          products =
+              essentialItems
+                  .where((item) => itemGroupsList.contains(item.itemGroup))
+                  .toList();
+          filteredProducts = List.from(products);
+          itemGroups = itemGroupsList;
+          _isSearching = false;
+          _currentPage = 0;
+          _hasMoreItems = true;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم تحديث الأصناف بنجاح'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ خطأ في تحديث الأصناف: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل في تحديث الأصناف'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  // تحديث الكميات المحسن
+  Future<void> _updateQuantitiesOptimized() async {
+    try {
+      setState(() {
+        _isSearching = true;
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+
+      if (posProfileJson == null) {
+        throw Exception('لم يتم تحديد إعدادات نقطة البيع');
+      }
+
+      final posProfile = json.decode(posProfileJson);
+      final warehouse = posProfile['warehouse'];
+
+      // تحديث كميات الأصناف في القائمة الحالية
+      final itemNames = products.map((item) => item.name).toList();
+      final quantitiesMap = await ItemService.updateItemsQuantities(
+        itemNames: itemNames,
+        warehouse: warehouse.toString(),
+      );
+
+      if (mounted) {
+        setState(() {
+          // تحديث الكميات في الأصناف
+          for (int i = 0; i < products.length; i++) {
+            final newQty = quantitiesMap[products[i].name] ?? 0.0;
+            products[i] = products[i].copyWith(qty: newQty);
+            // تحديث cache
+            _updateProductInCache(products[i]);
+          }
+
+          // تحديث الكميات في الأصناف المفلترة
+          for (int i = 0; i < filteredProducts.length; i++) {
+            final newQty = quantitiesMap[filteredProducts[i].name] ?? 0.0;
+            filteredProducts[i] = filteredProducts[i].copyWith(qty: newQty);
+            // تحديث cache
+            _updateProductInCache(filteredProducts[i]);
+          }
+
+          _isSearching = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم تحديث الكميات بنجاح'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ خطأ في تحديث الكميات: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل في تحديث الكميات'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   void _increaseQuantity(int index, [Function? setModalState]) {
+    // التحقق من أن البيانات محملة
+    if (products.isEmpty) {
+      MessageService.showWarning(
+        context,
+        "لم يتم تحميل بيانات المنتجات بعد. يرجى الانتظار",
+        title: "تحميل البيانات",
+      );
+      return;
+    }
+
     final availableQty = productQtyFromCartOrProducts(cartItems[index]);
     final currentQuantity = cartItems[index]['quantity'];
     print(
@@ -207,38 +718,31 @@ class _POSScreenState extends State<POSScreen> {
       );
       return;
     }
-    setState(() {
+
+    _safeUpdateCart(() {
       cartItems[index]['quantity'] += 1;
-      total += cartItems[index]['price'];
-    });
-    setModalState?.call(() {});
+    }, setModalState);
   }
 
   void _decreaseQuantity(int index, [Function? setModalState]) {
-    setState(() {
+    _safeUpdateCart(() {
       if (cartItems[index]['quantity'] > 1) {
         cartItems[index]['quantity'] -= 1;
-        total -= cartItems[index]['price'];
       } else {
-        total -= cartItems[index]['price'];
         cartItems.removeAt(index);
       }
-    });
-    setModalState?.call(() {});
+    }, setModalState);
   }
 
   void addToCart(Item product) {
-    final String? costCenter;
-    print("product => ${product.Item_Default}");
-    if (product.Item_Default != null) {
-      var firstItem = product.Item_Default?[0];
-      print("المستودع الافتراضي: ${firstItem?['default_warehouse']}");
-      print("حساب الإيرادات: ${firstItem?['income_account']}");
-      costCenter = firstItem?['selling_cost_center'];
-    } else {
-      costCenter = null;
+    // التأكد من أن المنتج موجود في القائمة الرئيسية والـ cache
+    if (!products.any((p) => p.itemName == product.itemName)) {
+      products.add(product);
+      print(
+        "➕ تم إضافة ${product.itemName} للقائمة الرئيسية عند الإضافة للسلة",
+      );
     }
-    print(costCenter);
+    _productsCache[product.itemName] = product;
 
     final existingIndex = cartItems.indexWhere(
       (item) => item['item_name'] == product.itemName,
@@ -271,7 +775,8 @@ class _POSScreenState extends State<POSScreen> {
       );
       return;
     }
-    setState(() {
+
+    _safeUpdateCart(() {
       print("product.additionalUOMs =>${product.additionalUOMs}");
       final selectedUOM = product.uom;
       final conversionFactor = getConversionFactor(
@@ -292,10 +797,8 @@ class _POSScreenState extends State<POSScreen> {
           'additionalUOMs': product.additionalUOMs,
           'discount_amount': product.discount_amount,
           'discount_percentage': product.discount_percentage,
-          'cost_center': costCenter,
         });
       }
-      total += product.rate;
     });
   }
 
@@ -312,21 +815,55 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   void removeFromCart(int index, [Function? setModalState]) {
-    setState(() {
-      total -= cartItems[index]['price'] * cartItems[index]['quantity'];
+    _safeUpdateCart(() {
       cartItems.removeAt(index);
-    });
-    setModalState?.call(() {});
+    }, setModalState);
   }
 
   void clearCart([Function? setModalState]) {
+    _resetAllState(setModalState); // استخدام الدالة الجديدة للتنظيف الشامل
+  }
+
+  /// دالة تنظيف شاملة لجميع المتغيرات
+  /// تنظف السلة، العميل، متغيرات البحث، ومتغيرات التحميل التدريجي
+  /// تستخدم بعد إنشاء الفاتورة أو في حالة الخطأ
+  void _resetAllState([Function? setModalState]) {
     setState(() {
+      // تنظيف السلة والعميل
       cartItems.clear();
       total = 0.0;
       selectedCustomer = null;
       invoDraftName = null;
+
+      // تنظيف متغيرات البحث
+      _currentSearchQuery = '';
+      _currentItemGroup = null;
+      selectedItemGroup = null;
+      searchController.clear();
+
+      // إعادة تعيين متغيرات التحميل التدريجي
+      _currentPage = 0;
+      _hasMoreItems = true;
+      _isLoadingMore = false;
+      _isSearching = false;
+
+      // إعادة عرض جميع المنتجات
+      filteredProducts = List.from(products);
     });
     setModalState?.call(() {});
+    print('🔄 تم تنظيف جميع المتغيرات وإعادة تعيين الحالة');
+    print('📋 المتغيرات التي تم تنظيفها:');
+    print('   - cartItems: ${cartItems.length} عنصر');
+    print('   - total: $total');
+    print('   - selectedCustomer: ${selectedCustomer?.customerName ?? "null"}');
+    print('   - invoDraftName: $invoDraftName');
+    print('   - _currentSearchQuery: "$_currentSearchQuery"');
+    print('   - _currentItemGroup: $_currentItemGroup');
+    print('   - selectedItemGroup: $selectedItemGroup');
+    print('   - _currentPage: $_currentPage');
+    print('   - _hasMoreItems: $_hasMoreItems');
+    print('   - _isLoadingMore: $_isLoadingMore');
+    print('   - _isSearching: $_isSearching');
   }
 
   Future<void> _processPayment(BuildContext context) async {
@@ -519,16 +1056,14 @@ class _POSScreenState extends State<POSScreen> {
 
       print('=== DEBUG BEFORE CLEARING CART ===');
       print('cartItems before clearing: ${cartItems.length}');
-      setState(() {
-        cartItems.clear();
-        total = 0.0;
-        selectedCustomer = null;
-        invoDraftName = null;
-      });
+      _resetAllState(); // استخدام الدالة الجديدة للتنظيف الشامل
       print('=== DEBUG AFTER CLEARING CART ===');
     } catch (e, stack) {
       Navigator.pop(context);
       print('خطأ في إتمام البيع: $e\n$stack');
+
+      // تنظيف الحالة حتى في حالة الخطأ
+      _resetAllState();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -598,7 +1133,7 @@ class _POSScreenState extends State<POSScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<String>(
-                      value: selectedMethod,
+                      initialValue: selectedMethod,
                       items:
                           paymentMethods.map((method) {
                             return DropdownMenuItem<String>(
@@ -801,7 +1336,7 @@ class _POSScreenState extends State<POSScreen> {
 
           Expanded(
             child: DropdownButtonFormField<String>(
-              value: selectedItemGroup,
+              initialValue: selectedItemGroup,
               decoration: InputDecoration(
                 labelText: 'تصفية حسب المجموعة',
                 labelStyle: TextStyle(color: primaryColor),
@@ -823,8 +1358,8 @@ class _POSScreenState extends State<POSScreen> {
               onChanged: (value) {
                 setState(() {
                   selectedItemGroup = value;
-                  _filterProducts();
                 });
+                _loadProductsByGroup(value);
               },
             ),
           ),
@@ -1409,7 +1944,7 @@ class _POSScreenState extends State<POSScreen> {
                     const SizedBox(height: 16),
 
                     DropdownButtonFormField<String>(
-                      value: selectedUnit,
+                      initialValue: selectedUnit,
                       items:
                           availableUnits.map((unit) {
                             return DropdownMenuItem<String>(
@@ -1586,7 +2121,7 @@ class _POSScreenState extends State<POSScreen> {
         '["uom","=","$unit"],'
         '["price_list","=","$priceList"],'
         '["selling","=",1]'
-        ']',
+        ']&limit_page_length=1000',
       );
       print(
         'GET Price => status: ${response.statusCode}, body: ${response.body}',
@@ -1606,14 +2141,89 @@ class _POSScreenState extends State<POSScreen> {
   }
 
   double calculateTotal() {
-    return cartItems.fold(0.0, (sum, item) {
-      // double factor = item['conversion_factor'] ?? 1.0;
-      return sum + (item['price'] * item['quantity']);
-    });
+    double calculatedTotal = 0.0;
+
+    for (final item in cartItems) {
+      try {
+        final price = (item['price'] as num?)?.toDouble() ?? 0.0;
+        final quantity = (item['quantity'] as num?)?.toInt() ?? 0;
+
+        // التحقق من صحة البيانات
+        if (price < 0 || quantity < 0) {
+          print(
+            '⚠️ تحذير: بيانات غير صحيحة - السعر: $price, الكمية: $quantity',
+          );
+          continue;
+        }
+
+        final itemTotal = price * quantity;
+        calculatedTotal += itemTotal;
+
+        // طباعة تفاصيل كل عنصر للتشخيص
+        print(
+          '📊 حساب العنصر: ${item['item_name']} - السعر: $price × الكمية: $quantity = $itemTotal',
+        );
+      } catch (e) {
+        print('❌ خطأ في حساب عنصر: ${item['item_name']} - $e');
+      }
+    }
+
+    // تقريب النتيجة لتجنب أخطاء الفاصلة العشرية
+    final roundedTotal = double.parse(calculatedTotal.toStringAsFixed(2));
+    print('💰 المجموع النهائي: $roundedTotal');
+
+    return roundedTotal;
   }
 
   int calculateTotalQuantity() {
     return cartItems.fold(0, (sum, item) => sum + (item['quantity'] as int));
+  }
+
+  /// دالة للتحقق من صحة الحسابات وطباعة تفاصيل السلة
+  void _debugCartCalculations() {
+    print('🔍 === فحص حسابات السلة ===');
+    print('عدد العناصر في السلة: ${cartItems.length}');
+    print('المجموع المحسوب: $total');
+
+    double manualTotal = 0.0;
+    for (int i = 0; i < cartItems.length; i++) {
+      final item = cartItems[i];
+      final price = (item['price'] as num?)?.toDouble() ?? 0.0;
+      final quantity = (item['quantity'] as num?)?.toInt() ?? 0;
+      final itemTotal = price * quantity;
+      manualTotal += itemTotal;
+
+      print('  العنصر $i: ${item['item_name']}');
+      print('    السعر: $price');
+      print('    الكمية: $quantity');
+      print('    المجموع الجزئي: $itemTotal');
+    }
+
+    print('المجموع اليدوي: $manualTotal');
+    print('الفرق: ${(total - manualTotal).abs()}');
+    print('=== نهاية الفحص ===');
+  }
+
+  /// دالة آمنة لتحديث السلة والمجموع
+  void _safeUpdateCart(VoidCallback updateCallback, [Function? setModalState]) {
+    if (_isUpdatingCart) {
+      print('⚠️ تحديث السلة قيد التنفيذ، تم تجاهل الطلب');
+      return;
+    }
+
+    _isUpdatingCart = true;
+
+    try {
+      setState(() {
+        updateCallback();
+        total = calculateTotal(); // إعادة حساب المجموع دائماً
+      });
+
+      setModalState?.call(() {});
+      _debugCartCalculations(); // فحص الحسابات للتأكد من صحتها
+    } finally {
+      _isUpdatingCart = false;
+    }
   }
 
   Future<void> _showCustomerDialog() async {
@@ -1839,8 +2449,14 @@ class _POSScreenState extends State<POSScreen> {
                   ],
                 ),
           );
+          if (shouldExit == true) {
+            // تنظيف الحالة عند الخروج
+            _resetAllState();
+          }
           return shouldExit ?? false;
         }
+        // تنظيف الحالة حتى لو كانت السلة فارغة
+        _resetAllState();
         return true;
       },
       child: Scaffold(
@@ -1858,28 +2474,31 @@ class _POSScreenState extends State<POSScreen> {
                     barrierColor: Colors.black54,
                     isDismissible: true,
                     enableDrag: false, // Prevent dragging
-                    builder: (context) => Container(
-                      height: MediaQuery.of(context).size.height * 0.7, // Fixed height
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(25),
+                    builder:
+                        (context) => Container(
+                          height:
+                              MediaQuery.of(context).size.height *
+                              0.7, // Fixed height
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(25),
+                            ),
+                          ),
+                          child: FutureBuilder<Widget>(
+                            future: _ShowListDraftInvoices(),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              }
+                              return snapshot.data ??
+                                  Center(child: Text('حدث خطأ غير متوقع'));
+                            },
+                          ),
                         ),
-                      ),
-                      child: FutureBuilder<Widget>(
-                        future: _ShowListDraftInvoices(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-                          return snapshot.data ??
-                              Center(child: Text('حدث خطأ غير متوقع'));
-                        },
-                      ),
-                    ),
                   );
                 },
                 backgroundColor: Colors.blue,
@@ -1979,6 +2598,32 @@ class _POSScreenState extends State<POSScreen> {
           ),
           iconTheme: const IconThemeData(color: Colors.white),
           actions: [
+            // // زر تحديث الأصناف
+            // IconButton(
+            //   icon: Icon(Icons.refresh, color: Colors.white),
+            //   tooltip: 'تحديث الأصناف',
+            //   onPressed: _refreshProductsOptimized,
+            // ),
+            // // زر تحديث الكميات
+            // IconButton(
+            //   icon: Icon(Icons.update, color: Colors.white),
+            //   tooltip: 'تحديث الكميات',
+            //   onPressed: _updateQuantitiesOptimized,
+            // ),
+            // زر فحص الحسابات (للتطوير فقط)
+            // IconButton(
+            //   icon: Icon(Icons.calculate, color: Colors.white),
+            //   tooltip: 'فحص الحسابات',
+            //   onPressed: () {
+            //     _debugCartCalculations();
+            //     ScaffoldMessenger.of(context).showSnackBar(
+            //       SnackBar(
+            //         content: Text('تم فحص الحسابات - راجع Console'),
+            //         duration: Duration(seconds: 2),
+            //       ),
+            //     );
+            //   },
+            // ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: Row(
@@ -2011,22 +2656,48 @@ class _POSScreenState extends State<POSScreen> {
             _buildFilterSection(),
             Expanded(
               flex: 4,
-              child: GridView.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  childAspectRatio: 0.6,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                ),
-                padding: EdgeInsets.all(8),
-                itemCount: filteredProducts.length,
-                itemBuilder: (context, index) {
-                  return ProductCard(
-                    product: filteredProducts[index],
-                    onTap: () => addToCart(filteredProducts[index]),
-                  );
-                },
-              ),
+              child:
+                  _isSearching
+                      ? Center(child: _buildSearchIndicator())
+                      : filteredProducts.isEmpty
+                      ? Center(child: _buildNoResultsMessage())
+                      : NotificationListener<ScrollNotification>(
+                        onNotification: (ScrollNotification scrollInfo) {
+                          if (scrollInfo.metrics.pixels ==
+                              scrollInfo.metrics.maxScrollExtent) {
+                            if (!_isLoadingMore && _hasMoreItems) {
+                              _loadMoreProducts();
+                            }
+                          }
+                          return false;
+                        },
+                        child: GridView.builder(
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                childAspectRatio: 0.6,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                              ),
+                          padding: EdgeInsets.all(8),
+                          itemCount:
+                              filteredProducts.length +
+                              (_isLoadingMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index == filteredProducts.length) {
+                              // عرض مؤشر التحميل في المنتصف
+                              return Container(
+                                alignment: Alignment.center,
+                                child: _buildLoadMoreIndicator(),
+                              );
+                            }
+                            return ProductCard(
+                              product: filteredProducts[index],
+                              onTap: () => addToCart(filteredProducts[index]),
+                            );
+                          },
+                        ),
+                      ),
             ),
           ],
         ),
@@ -2342,27 +3013,145 @@ class _POSScreenState extends State<POSScreen> {
     );
   }
 
+  // Cache للمنتجات لتحسين الأداء
+  final Map<String, Item> _productsCache = {};
+
   double? productQtyFromCartOrProducts(Map<String, dynamic> item) {
     print("=== productQtyFromCartOrProducts ===");
-    print("item: $item");
-    try {
-      final found = products.firstWhere((p) => p.itemName == item['item_name']);
-      final conversionFactor = item['conversion_factor'] ?? 1.0;
-      final availableQty = found.qty / conversionFactor;
-      print(
-        "found.qty: ${found.qty}, conversionFactor: $conversionFactor, availableQty: $availableQty",
-      );
-      print("=== END productQtyFromCartOrProducts ===");
-      return availableQty;
-    } catch (e) {
-      print("Error in productQtyFromCartOrProducts: $e");
+
+    final itemName = item['item_name'];
+    if (itemName == null || itemName.toString().isEmpty) {
+      print("Item name is null or empty");
       return null;
     }
+
+    final conversionFactor = item['conversion_factor'] ?? 1.0;
+    if (conversionFactor <= 0) {
+      print("Invalid conversion factor: $conversionFactor");
+      return null;
+    }
+
+    // 1. البحث في Cache أولاً (الأسرع)
+    if (_productsCache.containsKey(itemName)) {
+      final cachedProduct = _productsCache[itemName]!;
+      final availableQty = cachedProduct.qty / conversionFactor;
+      print("Found in cache: $itemName, qty: $availableQty");
+      return availableQty;
+    }
+
+    // 2. البحث في القائمة الكاملة أولاً (للمنتجات في السلة وغيرها) - الأهم!
+    final mainIndex = products.indexWhere((p) => p.itemName == itemName);
+    if (mainIndex != -1) {
+      final product = products[mainIndex];
+      _productsCache[itemName] = product; // إضافة للـ cache
+      final availableQty = product.qty / conversionFactor;
+      print("Found in main list: $itemName, qty: $availableQty");
+      return availableQty;
+    }
+
+    // 3. البحث في القائمة المفلترة (كخيار احتياطي)
+    final filteredIndex = filteredProducts.indexWhere(
+      (p) => p.itemName == itemName,
+    );
+    if (filteredIndex != -1) {
+      final product = filteredProducts[filteredIndex];
+      _productsCache[itemName] = product; // إضافة للـ cache
+
+      // إضافة للقائمة الرئيسية إذا لم يكن موجود (هذا مهم!)
+      if (!products.any((p) => p.itemName == product.itemName)) {
+        products.add(product);
+        print("➕ تم إضافة المنتج للقائمة الرئيسية: ${product.itemName}");
+      }
+
+      final availableQty = product.qty / conversionFactor;
+      print("Found in filtered list: $itemName, qty: $availableQty");
+      return availableQty;
+    }
+
+    // 4. إذا لم نجد المنتج، نحاول تحميله من السيرفر
+    print("Product not found locally, attempting server load: $itemName");
+    _loadProductFromServer(itemName.toString());
+
+    print("=== END productQtyFromCartOrProducts ===");
+    return null;
+  }
+
+  // دالة لتحميل منتج محدد من السيرفر
+  Future<void> _loadProductFromServer(String itemName) async {
+    try {
+      print("🔍 محاولة تحميل المنتج من السيرفر: $itemName");
+
+      // البحث عن المنتج في السيرفر
+      final serverResults = await ItemService.getItemsWithSearch(
+        query: itemName,
+        limit: 1,
+      );
+
+      if (serverResults.isNotEmpty) {
+        final product = serverResults.first;
+
+        // إضافة للـ cache مباشرة
+        _productsCache[product.itemName] = product;
+
+        // التحقق من عدم وجود المنتج في القائمة الرئيسية
+        final existingIndex = products.indexWhere(
+          (p) => p.itemName == product.itemName,
+        );
+
+        if (mounted) {
+          setState(() {
+            if (existingIndex == -1) {
+              // إضافة المنتج للقائمة الرئيسية
+              products.add(product);
+              print("✅ تم إضافة المنتج للقائمة الرئيسية: ${product.itemName}");
+            } else {
+              // تحديث بيانات المنتج الموجود
+              products[existingIndex] = product;
+              print("🔄 تم تحديث بيانات المنتج: ${product.itemName}");
+            }
+          });
+        }
+      } else {
+        print("❌ لم يتم العثور على المنتج في السيرفر: $itemName");
+      }
+    } catch (e) {
+      print("❌ خطأ في تحميل المنتج من السيرفر: $e");
+    }
+  }
+
+  // دوال إدارة الـ Cache
+  void _updateProductInCache(Item product) {
+    _productsCache[product.itemName] = product;
+  }
+
+  void _clearProductsCache() {
+    _productsCache.clear();
+    print("🗑️ تم مسح cache المنتجات");
+  }
+
+  void _refreshProductCacheFromMainList() {
+    _productsCache.clear();
+    for (final product in products) {
+      _productsCache[product.itemName] = product;
+    }
+    print("🔄 تم تحديث cache من القائمة الرئيسية");
   }
 
   Future<void> _saveInvoice() async {
     if (invoDraftName != null) {
-      MessageService.showWarning(context, "لايمكنك حفظ فاتورة معلقة");
+      final invoiceSave = await SalesInvoice.updateDraftSalesInvoice(
+        invoName: invoDraftName!,
+        customer: selectedCustomer!,
+        items: cartItems,
+        total: 0,
+        paidAmount: 0,
+      );
+      if (invoiceSave['success']) {
+        MessageService.showSuccess(context, "تم تحديث الفاتورة معلقة بنجاح");
+        _resetAllState();
+        return;
+      }
+      MessageService.showWarning(context, invoiceSave['message']);
       return;
     }
     if (selectedCustomer == null) {
@@ -2383,22 +3172,27 @@ class _POSScreenState extends State<POSScreen> {
       return;
     }
 
-    final invoiceResult = await SalesInvoice.createDraftSalesInvoice(
-      customer: selectedCustomer!,
-      items: cartItems,
-      total: 0,
-      paidAmount: 0,
-      outstandingAmount: 0,
-      discountAmount: 0,
-      discountPercentage: 0,
-    );
+    try {
+      final invoiceResult = await SalesInvoice.createDraftSalesInvoice(
+        customer: selectedCustomer!,
+        items: cartItems,
+        total: 0,
+        paidAmount: 0,
+        outstandingAmount: 0,
+        discountAmount: 0,
+        discountPercentage: 0,
+      );
 
-    MessageService.showSuccess(context, 'تم إنشاء الفاتورة معلقة بنجاح');
-    setState(() {
-      cartItems.clear();
-      total = 0.0;
-      selectedCustomer = null;
-    });
+      MessageService.showSuccess(context, 'تم إنشاء الفاتورة معلقة بنجاح');
+      _resetAllState(); // استخدام الدالة الجديدة للتنظيف الشامل
+    } catch (e) {
+      print('خطأ في حفظ الفاتورة المعلقة: $e');
+      MessageService.showError(
+        context,
+        'فشل في حفظ الفاتورة المعلقة: ${e.toString()}',
+      );
+      // لا ننظف الحالة في حالة الخطأ لنحافظ على البيانات
+    }
   }
 
   Future<Widget> _ShowListDraftInvoices() async {
@@ -2757,6 +3551,10 @@ class _POSScreenState extends State<POSScreen> {
       آخر تعديل: ${detailedInvoice['modified_by']} في ${detailedInvoice['modified']}
       ${detailedInvoice['items']}
       ''');
+
+      // تنظيف الحالة قبل تحميل الفاتورة الجديدة
+      _resetAllState();
+
       setState(() {
         invoDraftName = detailedInvoice['name'];
         print('''الرقم: ${detailedInvoice['name']}''');
@@ -2792,6 +3590,8 @@ class _POSScreenState extends State<POSScreen> {
     } catch (e) {
       Navigator.pop(context);
       print(e.toString());
+      // تنظيف الحالة في حالة الخطأ
+      _resetAllState();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('فشل تحميل الفاتورة: ${e.toString()}')),
       );
@@ -2835,9 +3635,15 @@ class _POSScreenState extends State<POSScreen> {
       if (success) {
         MessageService.showSuccess(context, "تم حذف الفاتورة المعلقة بنجاح");
         setState(() {});
+      } else {
+        MessageService.showWarning(context, "لم يتم حذف الفاتورة المعلقة");
       }
     } catch (e) {
-      MessageService.showWarning(context, "لم يتم حذف الفاتورة المعلقة ");
+      print('خطأ في حذف الفاتورة: $e');
+      MessageService.showWarning(
+        context,
+        "لم يتم حذف الفاتورة المعلقة: ${e.toString()}",
+      );
     }
   }
 }
@@ -2872,7 +3678,7 @@ void printSalesInvoice(
   await SunmiPrinter.initPrinter();
   // ignore: deprecated_member_use
   await SunmiPrinter.startTransactionPrint(true);
-  await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
+  // await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
 
   await SunmiPrinter.printText(
     'فاتورة',
@@ -3000,7 +3806,7 @@ void printSalesInvoice(
     style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
   );
   await SunmiPrinter.printText(
-    'شكرًا لزيارتكم!',
+    'شكرًا لتعاملكم معنا',
     style: SunmiTextStyle(
       bold: true,
       fontSize: 35,
@@ -3008,10 +3814,10 @@ void printSalesInvoice(
     ),
   );
 
-  await SunmiPrinter.printText(
-    'نتمنى أن نراكم مجددًا 😊',
-    style: SunmiTextStyle(fontSize: 35, align: SunmiPrintAlign.CENTER),
-  );
+  // await SunmiPrinter.printText(
+  //   'نتمنى أن نراكم مجددًا 😊',
+  //   style: SunmiTextStyle(fontSize: 35, align: SunmiPrintAlign.CENTER),
+  // );
 
   await SunmiPrinter.lineWrap(3);
   await SunmiPrinter.cutPaper();
@@ -3076,7 +3882,7 @@ class ProductCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              height: 170,
+              height: MediaQuery.of(context).size.height * 0.29,
               color: Colors.grey.shade200,
               child: Stack(
                 children: [

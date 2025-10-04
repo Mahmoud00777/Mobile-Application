@@ -1,15 +1,13 @@
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:drsaf/models/sales_invoice_summary.dart';
-import 'package:drsaf/services/sales_invoice_service.dart';
+import 'package:alkhair_daem/models/sales_invoice_summary.dart';
+import 'package:alkhair_daem/services/sales_invoice_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:sunmi_printer_plus/core/enums/enums.dart';
-import 'package:sunmi_printer_plus/core/styles/sunmi_text_style.dart';
-import 'package:sunmi_printer_plus/core/sunmi/sunmi_printer.dart';
-import 'package:sunmi_printer_plus/core/types/sunmi_column.dart';
+
+import 'package:sunmi_printer_plus/sunmi_printer_plus.dart';
 
 class InvoDetailsScreen extends StatefulWidget {
   final dynamic invoce;
@@ -314,7 +312,7 @@ void printTest(SalesInvoiceSummary invo) async {
   await SunmiPrinter.initPrinter();
   // ignore: deprecated_member_use
   await SunmiPrinter.startTransactionPrint(true);
-  await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
+  // await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
   await SunmiPrinter.printText(
     'تفاصيل الفاتورة',
     style: SunmiTextStyle(
@@ -422,7 +420,7 @@ void printTest(SalesInvoiceSummary invo) async {
     style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
   );
   await SunmiPrinter.printText(
-    'شكرًا لزيارتكم!',
+    'شكرًا لتعاملكم معنا',
     style: SunmiTextStyle(
       bold: true,
       fontSize: 35,
@@ -430,10 +428,10 @@ void printTest(SalesInvoiceSummary invo) async {
     ),
   );
 
-  await SunmiPrinter.printText(
-    'نتمنى أن نراكم مجددًا 😊',
-    style: SunmiTextStyle(fontSize: 35, align: SunmiPrintAlign.CENTER),
-  );
+  // await SunmiPrinter.printText(
+  //   'نتمنى أن نراكم مجددًا 😊',
+  //   style: SunmiTextStyle(fontSize: 35, align: SunmiPrintAlign.CENTER),
+  // );
 
   await SunmiPrinter.lineWrap(3);
   await SunmiPrinter.cutPaper();

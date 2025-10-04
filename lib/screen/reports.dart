@@ -1,7 +1,9 @@
-import 'package:drsaf/screen/bin_report_page.dart';
-import 'package:drsaf/screen/customer_ledger_summary_page.dart';
-import 'package:drsaf/screen/sales_invoice_summary_page.dart';
-import 'package:drsaf/screen/visit_report.dart';
+import 'package:alkhair_daem/screen/bin_report_page.dart';
+import 'package:alkhair_daem/screen/customer_ledger_summary_page.dart';
+import 'package:alkhair_daem/screen/sales_invoice_summary_page.dart';
+import 'package:alkhair_daem/screen/transactions_screen.dart';
+import 'package:alkhair_daem/screen/treasury_screen.dart';
+import 'package:alkhair_daem/screen/visit_report.dart';
 import 'package:flutter/material.dart';
 import 'payment_entry_report_page.dart';
 
@@ -71,6 +73,18 @@ class ReportsScreen extends StatelessWidget {
               icon: Icons.location_on,
               title: 'تقرير الزيارات',
               onTap: () => _navigateToReport(context, 'Visit'),
+            ),
+            _buildReportButton(
+              context,
+              icon: Icons.attach_money,
+              title: 'تقرير الخزينة',
+              onTap: () => _navigateToReport(context, 'Treasury'),
+            ),
+            _buildReportButton(
+              context,
+              icon: Icons.attach_money,
+              title: 'تقرير الحركات',
+              onTap: () => _navigateToReport(context, 'Transcations'),
             ),
           ],
         ),
@@ -147,6 +161,8 @@ class ReportsScreen extends StatelessWidget {
       'Outstanding': const CustomerLedgerPage(),
       'payments': const PaymentEntryReportPage(),
       'Visit': const VisitReportPage(filter: 3),
+      'Treasury': const TreasuryScreen(),
+      'Transcations': const TransactionsScreen(),
     };
 
     final Widget screen =

@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:drsaf/Class/message_service.dart';
-import 'package:drsaf/services/pos_service.dart';
+import 'package:alkhair_daem/Class/message_service.dart';
+import 'package:alkhair_daem/services/pos_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/Item.dart';
@@ -23,6 +24,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   DateTime? scheduleDate;
   Warehouse? selectedWarehouse;
   List<Item> availableItems = [];
+  List<Item> filteredItems = []; // الأصناف المفلترة
   List<Warehouse> availableWarehouses = [];
   List<Map<String, dynamic>> selectedItems = [];
   bool isLoading = true;
@@ -31,6 +33,22 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   final Color secondaryColor = Color(0xFFFFFFFF);
   final Color backgroundColor = Color(0xFFF2F2F2);
   final Color blackColor = Color(0xFF383838);
+
+  // متغيرات البحث والتصفية
+  TextEditingController searchController = TextEditingController();
+  List<String> itemGroups = [];
+  String? selectedItemGroup;
+
+  // متغيرات البحث الذكي
+  bool _isLoadingMore = false;
+  bool _hasMoreItems = true;
+  int _currentPage = 0;
+  final int _pageSize = 15; // حجم أصغر للشاشة
+  final String _currentSearchQuery = '';
+  String? _currentItemGroup;
+  bool _isSearching = false;
+  Timer? _searchDebounceTimer;
+  Timer? _loadingTimer;
 
   final List<String> requestReasons = [
     'الشراء',
@@ -57,7 +75,17 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
   @override
   void initState() {
     super.initState();
+    searchController.addListener(_onSearchChanged);
     _fetchProfileAndInitialize();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounceTimer?.cancel();
+    _loadingTimer?.cancel();
+    searchController.dispose();
+    ItemService.clearCache();
+    super.dispose();
   }
 
   Future<void> _fetchProfileAndInitialize() async {
@@ -98,7 +126,8 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
 
   Future<void> _loadData() async {
     try {
-      final items = await ItemService.getItemsForMaterialRequest();
+      // تحميل الأصناف الأساسية في الخلفية
+      await _preloadEssentialItemsOnStart();
 
       final prefs = await SharedPreferences.getInstance();
       final posProfileJson = prefs.getString('selected_pos_profile');
@@ -119,10 +148,8 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
       if (!mounted) return;
 
       setState(() {
-        availableItems = items;
         availableWarehouses = [warehouse];
         selectedWarehouse = warehouse;
-        isLoading = false;
         errorMessage = '';
       });
     } catch (e) {
@@ -130,6 +157,8 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
 
       setState(() {
         availableItems = [];
+        filteredItems = [];
+        itemGroups = [];
         availableWarehouses = [];
         selectedWarehouse = null;
         isLoading = false;
@@ -143,6 +172,278 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
         ),
       );
     }
+  }
+
+  // تحميل الأصناف الأساسية في الخلفية
+  Future<void> _preloadEssentialItemsOnStart() async {
+    try {
+      print('🔄 بدء تحميل الأصناف الأساسية لطلب المواد...');
+
+      final results = await Future.wait([
+        ItemService.getEssentialItems(limit: 12), // limit أصغر للشاشة
+        ItemService.getItemGroups(),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          availableItems = results[0] as List<Item>;
+          filteredItems = availableItems;
+          itemGroups = results[1] as List<String>;
+          isLoading = false;
+        });
+      }
+
+      print('✅ تم تحميل ${availableItems.length} صنف أساسي لطلب المواد');
+    } catch (e) {
+      print('❌ خطأ في تحميل الأصناف الأساسية لطلب المواد: $e');
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  // البحث المحلي السريع
+  void _searchLocally() {
+    final query = searchController.text.trim();
+    final group = selectedItemGroup;
+
+    setState(() {
+      _isSearching = false;
+      filteredItems = ItemService.searchItemsLocally(
+        query: query,
+        items: availableItems,
+        itemGroup: group,
+      );
+    });
+  }
+
+  // البحث على السيرفر
+  Future<void> _searchOnServer() async {
+    final query = searchController.text.trim();
+    final group = selectedItemGroup;
+
+    if (query.isEmpty && group == null) {
+      setState(() {
+        filteredItems = availableItems;
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    try {
+      final searchResults = await ItemService.getItemsWithSearch(
+        query: query,
+        itemGroup: group,
+        limit: 50,
+      );
+
+      if (mounted) {
+        setState(() {
+          filteredItems = searchResults;
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في البحث على السيرفر: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
+
+  // معالج تغيير البحث مع debounce
+  void _onSearchChanged() {
+    _searchDebounceTimer?.cancel();
+
+    // البحث المحلي فوراً
+    _searchLocally();
+
+    // البحث على السيرفر بعد 800ms
+    _searchDebounceTimer = Timer(Duration(milliseconds: 800), () {
+      _searchOnServer();
+    });
+  }
+
+  // تحميل المزيد من الأصناف
+  Future<void> _loadMoreItems() async {
+    if (_isLoadingMore || !_hasMoreItems) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final query = searchController.text.trim();
+      final group = selectedItemGroup;
+
+      final moreItems = await ItemService.getItemsPaginated(
+        query: query.isEmpty ? null : query,
+        itemGroup: group,
+        page: _currentPage,
+        pageSize: _pageSize,
+      );
+
+      if (mounted) {
+        setState(() {
+          if (moreItems.isNotEmpty) {
+            filteredItems.addAll(moreItems);
+            _currentPage++;
+            _hasMoreItems = moreItems.length == _pageSize;
+          } else {
+            _hasMoreItems = false;
+          }
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل المزيد من الأصناف: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  // تحميل الأصناف حسب المجموعة
+  Future<void> _loadItemsByGroup() async {
+    if (selectedItemGroup == null) {
+      setState(() {
+        filteredItems = availableItems;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    try {
+      final groupItems = await ItemService.getItemsByGroup(
+        itemGroup: selectedItemGroup!,
+      );
+
+      if (mounted) {
+        setState(() {
+          filteredItems = groupItems;
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل الأصناف حسب المجموعة: $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
+
+  void _showSearchDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.search, color: primaryColor),
+              SizedBox(width: 8),
+              Text('ابحث عن صنف', style: TextStyle(color: primaryColor)),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SearchBar(
+                  controller: searchController,
+                  hintText: 'ادخل اسم الصنف...',
+                  leading: Icon(Icons.search),
+                  onChanged: (value) {
+                    _onSearchChanged();
+                  },
+                ),
+                SizedBox(height: 10),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: primaryColor),
+              onPressed: () => Navigator.pop(context),
+              child: Text('إغلاق'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterSection() {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Row(
+        children: [
+          Container(
+            height: 50,
+            width: 50,
+            decoration: BoxDecoration(
+              color: primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.search, color: primaryColor),
+              tooltip: 'بحث عن صنف',
+              onPressed: () {
+                _showSearchDialog();
+              },
+            ),
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              initialValue: selectedItemGroup,
+              decoration: InputDecoration(
+                labelText: 'تصفية حسب المجموعة',
+                labelStyle: TextStyle(color: primaryColor),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: primaryColor),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: primaryColor),
+                ),
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12),
+              ),
+              items: [
+                DropdownMenuItem(value: null, child: Text('كل المجموعات')),
+                ...itemGroups.map((group) {
+                  return DropdownMenuItem(value: group, child: Text(group));
+                }),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  selectedItemGroup = value;
+                });
+                _loadItemsByGroup();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _addToSelectedItems(Item product) {
@@ -268,7 +569,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: selectedReason,
+                    initialValue: selectedReason,
                     items:
                         requestReasons.map((reason) {
                           return DropdownMenuItem(
@@ -324,7 +625,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                   AbsorbPointer(
                     absorbing: true,
                     child: DropdownButtonFormField<Warehouse>(
-                      value: selectedWarehouse,
+                      initialValue: selectedWarehouse,
                       items:
                           availableWarehouses.map((w) {
                             return DropdownMenuItem(
@@ -369,19 +670,44 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
               ),
             ),
             Expanded(
-              child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.8,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                ),
-                itemCount: availableItems.length,
-                itemBuilder: (context, index) {
-                  final item = availableItems[index];
-                  return _buildItemCard(item);
-                },
-              ),
+              child:
+                  _isSearching
+                      ? Center(child: _buildSearchIndicator())
+                      : filteredItems.isEmpty
+                      ? Center(child: _buildNoResultsMessage())
+                      : NotificationListener<ScrollNotification>(
+                        onNotification: (ScrollNotification scrollInfo) {
+                          if (scrollInfo.metrics.pixels ==
+                              scrollInfo.metrics.maxScrollExtent) {
+                            if (!_isLoadingMore && _hasMoreItems) {
+                              _loadMoreItems();
+                            }
+                          }
+                          return false;
+                        },
+                        child: GridView.builder(
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.8,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                              ),
+                          itemCount:
+                              filteredItems.length + (_isLoadingMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index == filteredItems.length) {
+                              // عرض مؤشر التحميل في المنتصف
+                              return Container(
+                                alignment: Alignment.center,
+                                child: _buildLoadMoreIndicator(),
+                              );
+                            }
+                            final item = filteredItems[index];
+                            return _buildItemCard(item);
+                          },
+                        ),
+                      ),
             ),
           ],
         ),
@@ -981,7 +1307,9 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
       ),
       body: Stack(
         children: [
-          Column(children: [_buildAvailableItemsSection()]),
+          Column(
+            children: [_buildFilterSection(), _buildAvailableItemsSection()],
+          ),
         ],
       ),
     );
@@ -1066,7 +1394,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: currentSelectedUnit,
+                      initialValue: currentSelectedUnit,
                       items:
                           availableUnits
                               .map(
@@ -1184,6 +1512,33 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
                 ),
               ],
             ),
+          ),
+        ),
+
+        // قسم التصفية في شاشة التحميل
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            children: [
+              Container(
+                height: 50,
+                width: 50,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
 
@@ -1312,7 +1667,7 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            height: 140,
+            height: MediaQuery.of(context).size.height * 0.21,
             color: Colors.grey[300],
             child: Stack(
               children: [
@@ -1463,6 +1818,188 @@ class _MaterialRequestPageState extends State<MaterialRequestPage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // مؤشر البحث محسن
+  Widget _buildSearchIndicator() {
+    return Center(
+      child: Container(
+        padding: EdgeInsets.all(20),
+        margin: EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // دائرة التحميل المتحركة
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                color: primaryColor,
+                strokeWidth: 3,
+                backgroundColor: primaryColor.withOpacity(0.1),
+              ),
+            ),
+            SizedBox(height: 12),
+            // النص
+            Text(
+              'جاري البحث...',
+              style: TextStyle(
+                fontSize: 13,
+                color: primaryColor,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 6),
+            // نص فرعي
+            Text(
+              'يرجى الانتظار',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[500],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // رسالة عدم وجود نتائج محسنة
+  Widget _buildNoResultsMessage() {
+    return Center(
+      child: Container(
+        padding: EdgeInsets.all(24),
+        margin: EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // أيقونة مع تأثير
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 36,
+                color: Colors.grey[400],
+              ),
+            ),
+            SizedBox(height: 16),
+            // النص الرئيسي
+            Text(
+              'لا توجد نتائج',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 8),
+            // نص فرعي
+            Text(
+              'جرب تغيير كلمات البحث',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[500],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 4),
+            // نص إضافي
+            Text(
+              'أو اختر مجموعة مختلفة',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[400],
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // مؤشر تحميل المزيد محسن
+  Widget _buildLoadMoreIndicator() {
+    return Center(
+      child: Container(
+        margin: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+          ],
+          border: Border.all(color: primaryColor.withOpacity(0.1), width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // أيقونة التحميل المتحركة
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                color: primaryColor,
+                strokeWidth: 2,
+                backgroundColor: primaryColor.withOpacity(0.1),
+              ),
+            ),
+            SizedBox(width: 8),
+            // النص المختصر
+            Flexible(
+              child: Text(
+                'جاري التحميل...',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: primaryColor,
+                ),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
     );

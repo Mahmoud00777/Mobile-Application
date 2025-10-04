@@ -5,9 +5,307 @@ import '../models/Item.dart';
 import 'api_client.dart';
 
 class ItemService {
+  // تحسين التخزين المؤقت - زيادة المدة
   static List<Item>? _cachedFullItems;
   static DateTime? _lastCacheTime;
-  static const Duration _cacheDuration = Duration(minutes: 5);
+  static const Duration _cacheDuration = Duration(
+    minutes: 30,
+  ); // تحسين من 10 إلى 30 دقيقة
+
+  // إضافة تخزين مؤقت للأصناف الأساسية
+  static List<Item>? _cachedEssentialItems;
+  static DateTime? _lastEssentialCacheTime;
+  static const Duration _essentialCacheDuration = Duration(minutes: 15);
+
+  // إضافة تخزين مؤقت للبحث المحلي
+  static List<Item>? _cachedSearchResults;
+  static String? _lastSearchQuery;
+  static DateTime? _lastSearchTime;
+  static const Duration _searchCacheDuration = Duration(minutes: 5);
+
+  // تحسين جلب الأصناف الأساسية
+  static Future<List<Item>> getEssentialItems({
+    String priceList = 'البيع القياسية',
+    int limit = 50,
+    bool forceRefresh = false,
+  }) async {
+    try {
+      // التحقق من التخزين المؤقت
+      if (!forceRefresh &&
+          _cachedEssentialItems != null &&
+          _lastEssentialCacheTime != null) {
+        final timeSinceLastCache = DateTime.now().difference(
+          _lastEssentialCacheTime!,
+        );
+        if (timeSinceLastCache < _essentialCacheDuration) {
+          print('📦 استخدام الأصناف الأساسية من التخزين المؤقت');
+          return _cachedEssentialItems!;
+        }
+      }
+
+      print('🔄 جلب الأصناف الأساسية...');
+
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+
+      if (posProfileJson == null || posProfileJson.isEmpty) {
+        throw Exception('لم يتم تحديد إعدادات نقطة البيع (POS Profile)');
+      }
+
+      final posProfile = json.decode(posProfileJson);
+      final posPriceList = posProfile['selling_price_list'];
+      final warehouse = posProfile['warehouse'];
+
+      final fields = [
+        '"name"',
+        '"item_name"',
+        '"item_group"',
+        '"stock_uom"',
+        '"description"',
+        '"image"',
+        '"sales_uom"',
+        '"item_defaults"',
+      ];
+
+      // جلب الأصناف الأساسية مرتبة حسب التعديل الأخير
+      final itemsRes = await ApiClient.get(
+        '/api/resource/Item?fields=[${fields.join(',')}]'
+        '&filters=[["disabled","=",0],["is_stock_item","=",1]]'
+        '&limit_page_length=$limit'
+        '&order_by=modified desc', // ترتيب حسب التعديل الأخير
+      );
+
+      if (itemsRes.statusCode != 200) {
+        throw Exception('فشل في جلب الأصناف الأساسية: ${itemsRes.statusCode}');
+      }
+
+      final itemsData = json.decode(itemsRes.body)['data'] as List;
+      if (itemsData.isEmpty) return [];
+
+      final result = await _processItemsData(
+        itemsData,
+        posPriceList: posPriceList,
+        warehouse: warehouse,
+        includePrices: true,
+        includeStock: true,
+        includeUOMs: true,
+      );
+
+      // ترتيب حسب الكمية تنازلياً
+      final sortedResult =
+          result.toList()..sort((a, b) => b.qty.compareTo(a.qty));
+
+      // حفظ في التخزين المؤقت
+      _cachedEssentialItems = sortedResult;
+      _lastEssentialCacheTime = DateTime.now();
+
+      print('✅ تم جلب ${sortedResult.length} صنف أساسي');
+      return sortedResult;
+    } catch (e, stack) {
+      print('❌ خطأ في جلب الأصناف الأساسية: $e');
+      print('Stack trace: $stack');
+      throw Exception('فشل في جلب الأصناف الأساسية: ${e.toString()}');
+    }
+  }
+
+  // تحسين البحث المحلي
+  static List<Item> searchItemsLocally({
+    required String query,
+    required List<Item> items,
+    String? itemGroup,
+  }) {
+    if (query.isEmpty && itemGroup == null) {
+      return items;
+    }
+
+    final lowercaseQuery = query.toLowerCase();
+
+    return items.where((item) {
+      // البحث في الاسم
+      final matchesName =
+          item.itemName.toLowerCase().contains(lowercaseQuery) ||
+          item.name.toLowerCase().contains(lowercaseQuery);
+
+      // البحث في الوصف
+      final matchesDescription =
+          item.description?.toLowerCase().contains(lowercaseQuery) ?? false;
+
+      // فلتر المجموعة
+      final matchesGroup = itemGroup == null || item.itemGroup == itemGroup;
+
+      return (matchesName || matchesDescription) && matchesGroup;
+    }).toList();
+  }
+
+  // تحسين جلب الأصناف حسب المجموعة
+  static Future<List<Item>> getItemsByGroup({
+    required String itemGroup,
+    String priceList = 'البيع القياسية',
+    bool forceRefresh = false,
+  }) async {
+    try {
+      print('🔄 جلب الأصناف لمجموعة: $itemGroup');
+
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+
+      if (posProfileJson == null || posProfileJson.isEmpty) {
+        throw Exception('لم يتم تحديد إعدادات نقطة البيع (POS Profile)');
+      }
+
+      final posProfile = json.decode(posProfileJson);
+      final posPriceList = posProfile['selling_price_list'];
+      final warehouse = posProfile['warehouse'];
+
+      final fields = [
+        '"name"',
+        '"item_name"',
+        '"item_group"',
+        '"stock_uom"',
+        '"description"',
+        '"image"',
+        '"sales_uom"',
+        '"item_defaults"',
+      ];
+
+      final itemsRes = await ApiClient.get(
+        '/api/resource/Item?fields=[${fields.join(',')}]'
+        '&filters=[["disabled","=",0],["is_stock_item","=",1],["item_group","=","$itemGroup"]]'
+        '&limit_page_length=1000'
+        '&order_by=modified desc',
+      );
+
+      if (itemsRes.statusCode != 200) {
+        throw Exception('فشل في جلب الأصناف للمجموعة: ${itemsRes.statusCode}');
+      }
+
+      final itemsData = json.decode(itemsRes.body)['data'] as List;
+      if (itemsData.isEmpty) return [];
+
+      final result = await _processItemsData(
+        itemsData,
+        posPriceList: posPriceList,
+        warehouse: warehouse,
+        includePrices: true,
+        includeStock: true,
+        includeUOMs: true,
+      );
+
+      // ترتيب حسب الكمية تنازلياً
+      final sortedResult =
+          result.toList()..sort((a, b) => b.qty.compareTo(a.qty));
+
+      print('✅ تم جلب ${sortedResult.length} صنف لمجموعة $itemGroup');
+      return sortedResult;
+    } catch (e, stack) {
+      print('❌ خطأ في جلب الأصناف للمجموعة: $e');
+      print('Stack trace: $stack');
+      throw Exception('فشل في جلب الأصناف للمجموعة: ${e.toString()}');
+    }
+  }
+
+  //     print('📄 جلب الأصناف - الصفحة ${page + 1} (${pageSize} صنف)');
+
+  //     final prefs = await SharedPreferences.getInstance();
+  //     final posProfileJson = prefs.getString('selected_pos_profile');
+
+  //     if (posProfileJson == null || posProfileJson.isEmpty) {
+  //       throw Exception('لم يتم تحديد إعدادات نقطة البيع (POS Profile)');
+  //     }
+
+  //     final posProfile = json.decode(posProfileJson);
+  //     final posPriceList = posProfile['selling_price_list'];
+  //     final warehouse = posProfile['warehouse'];
+
+  //     final fields = [
+  //       '"name"',
+  //       '"item_name"',
+  //       '"item_group"',
+  //       '"stock_uom"',
+  //       '"description"',
+  //       '"image"',
+  //       '"sales_uom"',
+  //       '"item_defaults"',
+  //     ];
+
+  //     // بناء الفلاتر
+  //     final filters = [
+  //       '["disabled","=",0]',
+  //       '["is_stock_item","=",1]',
+  //     ];
+
+  //     if (query != null && query.isNotEmpty) {
+  //       filters.add('["item_name","like","%$query%"]');
+  //     }
+
+  //     if (itemGroup != null) {
+  //       filters.add('["item_group","=","$itemGroup"]');
+  //     }
+
+  //     final start = page * pageSize;
+
+  //     final itemsRes = await ApiClient.get(
+  //       '/api/resource/Item?fields=[${fields.join(',')}]'
+  //       '&filters=[${filters.join(',')}]'
+  //       '&limit_page_length=$pageSize'
+  //       '&limit_start=$start'
+  //       '&order_by=modified desc',
+  //     );
+
+  //     if (itemsRes.statusCode != 200) {
+  //       throw Exception('فشل في جلب الأصناف: ${itemsRes.statusCode}');
+  //     }
+
+  //     final itemsData = json.decode(itemsRes.body)['data'] as List;
+  //     if (itemsData.isEmpty) return [];
+
+  //     final result = await _processItemsData(
+  //       itemsData,
+  //       posPriceList: posPriceList,
+  //       warehouse: warehouse,
+  //       includePrices: true,
+  //       includeStock: true,
+  //       includeUOMs: true,
+  //     );
+
+  //     // ترتيب حسب الكمية تنازلياً
+  //     final sortedResult = result.toList()
+  //       ..sort((a, b) => b.qty.compareTo(a.qty));
+
+  //     print('✅ تم جلب ${sortedResult.length} صنف للصفحة ${page + 1}');
+  //     return sortedResult;
+  //   } catch (e, stack) {
+  //     print('❌ خطأ في جلب الأصناف: $e');
+  //     print('Stack trace: $stack');
+  //     throw Exception('فشل في جلب الأصناف: ${e.toString()}');
+  //   }
+  // }
+
+  // تحسين التخزين المؤقت - مسح محدد
+  // static void clearEssentialCache() {
+  //   _cachedEssentialItems = null;
+  //   _lastEssentialCacheTime = null;
+  //   print('📦 تم مسح تخزين الأصناف الأساسية');
+  // }
+
+  // static void clearSearchCache() {
+  //   _cachedSearchResults = null;
+  //   _lastSearchQuery = null;
+  //   _lastSearchTime = null;
+  //   print('🔍 تم مسح تخزين البحث');
+  // }
+
+  // تحسين مسح التخزين المؤقت الشامل
+  // static void clearCache() {
+  //   _cachedFullItems = null;
+  //   _lastCacheTime = null;
+  //   _cachedEssentialItems = null;
+  //   _lastEssentialCacheTime = null;
+  //   _cachedSearchResults = null;
+  //   _lastSearchQuery = null;
+  //   _lastSearchTime = null;
+  //   print('🧹 تم مسح جميع التخزين المؤقت');
+  // }
 
   static Future<List<Item>> _getFullItems({
     String priceList = 'البيع القياسية',
@@ -122,7 +420,10 @@ class ItemService {
     );
     print('items: ${items.length}');
     print('items: ${items.first.toJson()}');
-    return items.toList();
+
+    final sortedItems = items.toList()..sort((a, b) => b.qty.compareTo(a.qty));
+
+    return sortedItems;
   }
 
   static Future<List<Item>> getItemsForReturn({
@@ -193,8 +494,7 @@ class ItemService {
       }
     }
 
-    final itemDefaultsMap = <String, List<Map<String, dynamic>>>{};
-    await _fetchItemDefaults(itemNames, itemDefaultsMap);
+    // تم إلغاء _fetchItemDefaults
 
     for (final item in itemsData) {
       try {
@@ -205,7 +505,7 @@ class ItemService {
           'currency': pricesMap.containsKey(itemName) ? 'SAR' : null,
           'stock_qty': stockMap[itemName] ?? 0.0,
           'additional_uoms': uomsMap[itemName] ?? [],
-          'item_defaults': itemDefaultsMap[itemName] ?? [],
+          'item_defaults': [], // تم إلغاء _fetchItemDefaults
         });
         result.add(itemObj);
       } catch (e, stack) {
@@ -227,7 +527,7 @@ class ItemService {
       print('🔍 بدء جلب الأسعار...');
       print('📋 عدد الأصناف: ${itemNames.length}');
       print('💰 قائمة الأسعار: $posPriceList');
-      
+
       final preferredUOMs = <String, String>{};
       final stockUOMs = <String, String>{};
 
@@ -250,7 +550,9 @@ class ItemService {
           i + batchSize > itemNames.length ? itemNames.length : i + batchSize,
         );
 
-        print('🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}');
+        print(
+          '🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}',
+        );
         print('📋 عدد الأصناف في هذه المجموعة: ${batch.length}');
 
         final priceFilters = [
@@ -279,7 +581,9 @@ class ItemService {
             final itemCode = price['item_code'].toString();
             allPricesByItem.putIfAbsent(itemCode, () => []).add({
               'rate':
-                  double.tryParse(price['price_list_rate']?.toString() ?? '0') ??
+                  double.tryParse(
+                    price['price_list_rate']?.toString() ?? '0',
+                  ) ??
                   0,
               'uom': price['uom']?.toString(),
             });
@@ -301,7 +605,7 @@ class ItemService {
 
         if (allPricesByItem.containsKey(itemName)) {
           print('   - يوجد أسعار لهذا الصنف: ${allPricesByItem[itemName]}');
-          
+
           final preferredPrice = allPricesByItem[itemName]!.firstWhere(
             (price) => price['uom'] == preferredUOM,
             orElse: () => {'rate': 0.0, 'uom': null},
@@ -346,7 +650,9 @@ class ItemService {
           i + batchSize > itemNames.length ? itemNames.length : i + batchSize,
         );
 
-        print('🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}');
+        print(
+          '🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}',
+        );
         print('📋 عدد الأصناف في هذه المجموعة: ${batch.length}');
 
         final stockRes = await ApiClient.get(
@@ -365,7 +671,7 @@ class ItemService {
         if (stockRes.statusCode == 200) {
           final stockData = json.decode(stockRes.body)['data'] as List;
           print('📊 عدد سجلات المخزون المستلمة للمجموعة: ${stockData.length}');
-          
+
           for (final stock in stockData) {
             print('📦 معالجة سجل مخزون: $stock');
             final itemCode = stock['item_code'].toString();
@@ -431,44 +737,6 @@ class ItemService {
     }
   }
 
-  static Future<void> _fetchItemDefaults(
-    List<String> itemNames,
-    Map<String, List<Map<String, dynamic>>> itemDefaultsMap,
-  ) async {
-    try {
-      const batchSize = 20;
-      for (var i = 0; i < itemNames.length; i += batchSize) {
-        final batch = itemNames.sublist(
-          i,
-          i + batchSize > itemNames.length ? itemNames.length : i + batchSize,
-        );
-
-        await Future.wait(
-          batch.map((itemName) async {
-            try {
-              final res = await ApiClient.get(
-                '/api/resource/Item/$itemName?fields=["item_defaults"]',
-              );
-              if (res.statusCode == 200) {
-                final itemData = json.decode(res.body)['data'];
-                if (itemData['item_defaults'] != null &&
-                    itemData['item_defaults'] is List) {
-                  itemDefaultsMap[itemName] =
-                      (itemData['item_defaults'] as List)
-                          .cast<Map<String, dynamic>>();
-                }
-              }
-            } catch (e) {
-              print('تحذير: فشل جلب item_defaults للصنف $itemName - $e');
-            }
-          }),
-        );
-      }
-    } catch (e) {
-      print('تحذير: فشل جلب item_defaults - $e');
-    }
-  }
-
   static Future<List<String>> getItemGroups() async {
     final prefs = await SharedPreferences.getInstance();
     final posProfileJson = prefs.getString('selected_pos_profile');
@@ -503,7 +771,9 @@ class ItemService {
           i + batchSize > itemNames.length ? itemNames.length : i + batchSize,
         );
 
-        print('🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}');
+        print(
+          '🔄 معالجة مجموعة ${(i ~/ batchSize) + 1} من ${(itemNames.length / batchSize).ceil()}',
+        );
         print('📋 عدد الأصناف في هذه المجموعة: ${batch.length}');
 
         final stockRes = await ApiClient.get(
@@ -516,7 +786,9 @@ class ItemService {
           '&limit_page_length=1000',
         );
 
-        print('📡 استجابة تحديث المخزون للمجموعة - Status: ${stockRes.statusCode}');
+        print(
+          '📡 استجابة تحديث المخزون للمجموعة - Status: ${stockRes.statusCode}',
+        );
         print('📄 محتوى استجابة تحديث المخزون: ${stockRes.body}');
 
         if (stockRes.statusCode == 200) {
@@ -544,10 +816,196 @@ class ItemService {
     }
   }
 
+  // تحسين جلب الأصناف مع البحث
+  static Future<List<Item>> getItemsWithSearch({
+    required String query,
+    String? itemGroup,
+    String priceList = 'البيع القياسية',
+    int limit = 100,
+    bool forceRefresh = false,
+  }) async {
+    try {
+      print(
+        '🔍 البحث عن الأصناف: "$query" ${itemGroup != null ? 'في مجموعة $itemGroup' : ''}',
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+
+      if (posProfileJson == null || posProfileJson.isEmpty) {
+        throw Exception('لم يتم تحديد إعدادات نقطة البيع (POS Profile)');
+      }
+
+      final posProfile = json.decode(posProfileJson);
+      final posPriceList = posProfile['selling_price_list'];
+      final warehouse = posProfile['warehouse'];
+
+      final fields = [
+        '"name"',
+        '"item_name"',
+        '"item_group"',
+        '"stock_uom"',
+        '"description"',
+        '"image"',
+        '"sales_uom"',
+        '"item_defaults"',
+      ];
+
+      // بناء الفلاتر
+      final filters = ['["disabled","=",0]', '["is_stock_item","=",1]'];
+
+      if (query.isNotEmpty) {
+        filters.add('["item_name","like","%$query%"]');
+      }
+
+      if (itemGroup != null) {
+        filters.add('["item_group","=","$itemGroup"]');
+      }
+
+      final itemsRes = await ApiClient.get(
+        '/api/resource/Item?fields=[${fields.join(',')}]'
+        '&filters=[${filters.join(',')}]'
+        '&limit_page_length=$limit'
+        '&order_by=modified desc',
+      );
+
+      if (itemsRes.statusCode != 200) {
+        throw Exception('فشل في البحث عن الأصناف: ${itemsRes.statusCode}');
+      }
+
+      final itemsData = json.decode(itemsRes.body)['data'] as List;
+      if (itemsData.isEmpty) return [];
+
+      final result = await _processItemsData(
+        itemsData,
+        posPriceList: posPriceList,
+        warehouse: warehouse,
+        includePrices: true,
+        includeStock: true,
+        includeUOMs: true,
+      );
+
+      // ترتيب حسب الكمية تنازلياً
+      final sortedResult =
+          result.toList()..sort((a, b) => b.qty.compareTo(a.qty));
+
+      print('✅ تم العثور على ${sortedResult.length} صنف');
+      return sortedResult;
+    } catch (e, stack) {
+      print('❌ خطأ في البحث عن الأصناف: $e');
+      print('Stack trace: $stack');
+      throw Exception('فشل في البحث عن الأصناف: ${e.toString()}');
+    }
+  }
+
+  // تحسين التحميل التدريجي
+  static Future<List<Item>> getItemsPaginated({
+    String? query,
+    String? itemGroup,
+    String priceList = 'البيع القياسية',
+    int page = 0,
+    int pageSize = 50,
+    bool forceRefresh = false,
+  }) async {
+    try {
+      print('📄 جلب الأصناف - الصفحة ${page + 1} ($pageSize صنف)');
+
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+
+      if (posProfileJson == null || posProfileJson.isEmpty) {
+        throw Exception('لم يتم تحديد إعدادات نقطة البيع (POS Profile)');
+      }
+
+      final posProfile = json.decode(posProfileJson);
+      final posPriceList = posProfile['selling_price_list'];
+      final warehouse = posProfile['warehouse'];
+
+      final fields = [
+        '"name"',
+        '"item_name"',
+        '"item_group"',
+        '"stock_uom"',
+        '"description"',
+        '"image"',
+        '"sales_uom"',
+        '"item_defaults"',
+      ];
+
+      // بناء الفلاتر
+      final filters = ['["disabled","=",0]', '["is_stock_item","=",1]'];
+
+      if (query != null && query.isNotEmpty) {
+        filters.add('["item_name","like","%$query%"]');
+      }
+
+      if (itemGroup != null) {
+        filters.add('["item_group","=","$itemGroup"]');
+      }
+
+      final start = page * pageSize;
+
+      final itemsRes = await ApiClient.get(
+        '/api/resource/Item?fields=[${fields.join(',')}]'
+        '&filters=[${filters.join(',')}]'
+        '&limit_page_length=$pageSize'
+        '&limit_start=$start'
+        '&order_by=modified desc',
+      );
+
+      if (itemsRes.statusCode != 200) {
+        throw Exception('فشل في جلب الأصناف: ${itemsRes.statusCode}');
+      }
+
+      final itemsData = json.decode(itemsRes.body)['data'] as List;
+      if (itemsData.isEmpty) return [];
+
+      final result = await _processItemsData(
+        itemsData,
+        posPriceList: posPriceList,
+        warehouse: warehouse,
+        includePrices: true,
+        includeStock: true,
+        includeUOMs: true,
+      );
+
+      // ترتيب حسب الكمية تنازلياً
+      final sortedResult =
+          result.toList()..sort((a, b) => b.qty.compareTo(a.qty));
+
+      print('✅ تم جلب ${sortedResult.length} صنف للصفحة ${page + 1}');
+      return sortedResult;
+    } catch (e, stack) {
+      print('❌ خطأ في جلب الأصناف: $e');
+      print('Stack trace: $stack');
+      throw Exception('فشل في جلب الأصناف: ${e.toString()}');
+    }
+  }
+
+  // تحسين التخزين المؤقت - مسح محدد
+  static void clearEssentialCache() {
+    _cachedEssentialItems = null;
+    _lastEssentialCacheTime = null;
+    print('📦 تم مسح تخزين الأصناف الأساسية');
+  }
+
+  static void clearSearchCache() {
+    _cachedSearchResults = null;
+    _lastSearchQuery = null;
+    _lastSearchTime = null;
+    print('🔍 تم مسح تخزين البحث');
+  }
+
+  // تحسين مسح التخزين المؤقت الشامل
   static void clearCache() {
     _cachedFullItems = null;
     _lastCacheTime = null;
-    print('تم مسح Cache الشامل');
+    _cachedEssentialItems = null;
+    _lastEssentialCacheTime = null;
+    _cachedSearchResults = null;
+    _lastSearchQuery = null;
+    _lastSearchTime = null;
+    print('🧹 تم مسح جميع التخزين المؤقت');
   }
 
   static Future<List<Item>> refreshItems({

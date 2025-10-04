@@ -37,10 +37,57 @@ class AuthService {
     return currentUser;
   }
 
+  static Future<String> getValidUserEmail() async {
+    final user = await getCurrentUser();
+    if (user == null) {
+      throw Exception('المستخدم غير معروف أو غير مسجل الدخول');
+    }
+
+    if (_isValidEmail(user)) {
+      return user;
+    }
+
+    try {
+      final response = await ApiClient.get(
+        '/api/resource/User?filters=[["username","=","$user"]]&fields=["name","email"]',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final users = data['data'] as List;
+
+        if (users.isNotEmpty) {
+          final userData = users[0];
+          final email = userData['email']?.toString();
+          print('email === $email');
+
+          if (email != null && email.isNotEmpty && _isValidEmail(email)) {
+            currentUser = email;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('currentUser', email);
+            return email;
+          } else {
+            throw Exception('لم يتم العثور على email صحيح للمستخدم: $user');
+          }
+        } else {
+          throw Exception('لم يتم العثور على المستخدم: $user');
+        }
+      } else {
+        throw Exception('فشل في جلب بيانات المستخدم: $user');
+      }
+    } catch (e) {
+      print('Error fetching user email: $e');
+      throw Exception('فشل في جلب email المستخدم: ${e.toString()}');
+    }
+  }
+
+  static bool _isValidEmail(String email) {
+    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+  }
+
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // حذف بيانات الجلسة
     await prefs.remove('currentUser');
     await prefs.remove('session_cookie');
     await prefs.remove('selected_pos_profile');

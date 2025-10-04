@@ -1,4 +1,4 @@
-import 'package:drsaf/screen/invo_details_screen.dart';
+import 'package:alkhair_daem/screen/invo_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/sales_invoice_summary.dart';
@@ -7,7 +7,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:io';
 
 class SalesInvoiceSummaryPage extends StatefulWidget {
-  final int? invoiceType; // جعلها nullable
+  final int? invoiceType;
   final int? filter;
   const SalesInvoiceSummaryPage({
     super.key,

@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:drsaf/Class/message_service.dart';
+import 'package:alkhair_daem/Class/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
@@ -267,7 +267,7 @@ class _VisitScreenState extends State<VisitScreen> {
                         FocusScope.of(context).unfocus();
                         setModalState(() => isVisitCompleted = value);
                       },
-                      activeColor: Colors.green,
+                      activeThumbColor: Colors.green,
                       inactiveTrackColor: Colors.red.withOpacity(0.5),
                     ),
                     const SizedBox(height: 16),
@@ -1111,7 +1111,7 @@ class _VisitScreenState extends State<VisitScreen> {
 
                           // حقل حالة الزيارة (قابل للتعديل)
                           DropdownButtonFormField<String>(
-                            value: selectedState,
+                            initialValue: selectedState,
                             decoration: InputDecoration(
                               labelText: 'حالة الزيارة',
                               border: OutlineInputBorder(),

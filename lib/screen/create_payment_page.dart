@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:drsaf/Class/message_service.dart';
-import 'package:drsaf/services/payment_service_list.dart';
+import 'package:alkhair_daem/Class/message_service.dart';
+import 'package:alkhair_daem/services/payment_service_list.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -458,14 +458,20 @@ class _CreatePaymentPageState extends State<CreatePaymentPage> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: _isSubmitting
-                          ? CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(secondaryColor),
-                            )
-                          : Text(
-                              'إرسال',
-                              style: TextStyle(fontSize: 18, color: secondaryColor),
-                            ),
+                      child:
+                          _isSubmitting
+                              ? CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  secondaryColor,
+                                ),
+                              )
+                              : Text(
+                                'إرسال',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: secondaryColor,
+                                ),
+                              ),
                     ),
                   ],
                 )

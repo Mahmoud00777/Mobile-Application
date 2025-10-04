@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:drsaf/models/customer.dart';
-import 'package:drsaf/models/sales_invoice_summary.dart';
-import 'package:drsaf/services/api_client.dart';
+import 'package:alkhair_daem/models/customer.dart';
+import 'package:alkhair_daem/models/sales_invoice_summary.dart';
+import 'package:alkhair_daem/services/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -622,6 +622,7 @@ class SalesInvoice {
     }
     return null;
   }
+
   static Future<List<SalesInvoiceSummary>?> getDraftSalesReturninvoice() async {
     final prefs = await SharedPreferences.getInstance();
     final openShiftId = prefs.getString('pos_open');
@@ -1128,6 +1129,296 @@ class SalesInvoice {
           'invoice_name': invoiceName,
           'full_invoice': fullInvoice,
           'customer_outstanding': customerOutstanding,
+          'message':
+              outstandingAmount > 0
+                  ? 'تم إنشاء الفاتورة كمسودة مع وجود رصيد مستحق'
+                  : 'تم إنشاء الفاتورة بنجاح',
+          'outstanding_amount': outstandingAmount,
+          // 'visit_update_status': visitUpdateResponse['success'],
+          // 'visit_message': visitUpdateResponse['message'],
+        };
+      } else {
+        return {
+          'success': false,
+          'error': 'فشل في إنشاء الفاتورة: ${response.statusCode}',
+          'details': response.body,
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'حدث خطأ أثناء إنشاء الفاتورة: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateDraftSalesInvoice({
+    required Customer customer,
+    required List<Map<String, dynamic>> items,
+    required double total,
+    double paidAmount = 0.0,
+    double outstandingAmount = 0.0,
+    String priceList = 'البيع القياسية',
+    DateTime? postingDate,
+    DateTime? dueDate,
+    double? discountAmount,
+    double? discountPercentage,
+    String? invoName,
+  }) async {
+    try {
+      final invoiceExists = await validateInvoiceExists(invoName!);
+      print('''invoiceExists ====>> $invoiceExists''');
+      if (!invoiceExists) {
+        throw Exception('الفاتورة $invoName غير موجودة');
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+      final openShiftId = prefs.getString('pos_open');
+
+      if (posProfileJson == null || posProfileJson.isEmpty) {
+        throw Exception('لم يتم تحديد إعدادات نقطة البيع (POS Profile)');
+      }
+
+      if (openShiftId == null) {
+        throw Exception('لا يوجد وردية مفتوحة');
+      }
+
+      final posProfile = json.decode(posProfileJson);
+      final company = posProfile['company'] ?? 'HR';
+      final currency = posProfile['currency'];
+      final debitTo = posProfile['custom_debit_to'];
+      final posProfileName = posProfile['name'] ?? 'Default POS Profile';
+      final posPriceList = posProfile['selling_price_list'];
+      final defaultModeOfPayment =
+          posProfile['payments']?[0]['mode_of_payment'] ?? 'Cash';
+
+      outstandingAmount = total - paidAmount;
+      print('discountPercentage = > $discountPercentage');
+      print('discountAmount = > $discountAmount');
+      print('items = > $items');
+
+      final invoiceData = {
+        'customer': customer.name,
+        'customer_name': customer.customerName,
+        'price_list': priceList,
+        'payment_terms_template': 'test',
+        'items':
+            items
+                .map(
+                  (item) => {
+                    'name': item['id'],
+                    'item_code': item['name'],
+                    'item_name': item['item_name'],
+                    'qty': item['quantity'],
+                    'rate': item['price'],
+                    'uom': item['uom'] ?? 'Nos',
+                    'discount_amount': item['discount_amount'] ?? 0.0,
+                    'discount_percentage': item['discount_percentage'] ?? 0.0,
+                    'conversion_factor': item['conversion_factor'] ?? 1,
+                    'cost_center': item['cost_center'],
+                    'income_account': item['income_account'],
+                  },
+                )
+                .toList(),
+        'taxes_and_charges': '',
+        'posting_date':
+            postingDate?.toIso8601String().split('T')[0] ??
+            DateTime.now().toIso8601String().split('T')[0],
+        'due_date':
+            dueDate?.toIso8601String().split('T')[0] ??
+            DateTime.now()
+                .add(Duration(days: 30))
+                .toIso8601String()
+                .split('T')[0],
+        'company': company,
+        'currency': currency,
+        'conversion_rate': 1,
+        'debit_to': debitTo,
+        'selling_price_list': posPriceList,
+        'ignore_pricing_rule': 0,
+        'do_not_submit': 0,
+        'is_pos': 1,
+        'pos_profile': posProfileName,
+        'update_stock': 1,
+        'advance_paid': paidAmount,
+        'outstanding_amount': outstandingAmount > 0 ? outstandingAmount : 0,
+        'custom_pos_open_shift': openShiftId,
+        'additional_discount_percentage': discountPercentage,
+        'discount_amount': discountAmount,
+      };
+      print('''before send to update =>$invoName''');
+      final response = await ApiClient.putJson(
+        '/api/resource/Sales Invoice/$invoName',
+        invoiceData,
+      );
+
+      print(
+        'Sales Invoice => status: ${response.statusCode}, body: ${response.body}',
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        final invoiceName = responseData['data']['name'];
+
+        // final result = await submitSalesInvoice(invoiceName);
+        print('shiftId => shiftId: $openShiftId');
+        // final visitUpdateResponse = await updateVisitStatus(
+        //   customerName: customer.name,
+        //   shiftId: openShiftId,
+        //   newStatus: 'فاتورة',
+        //   invoiceNumber: invoiceName,
+        // );
+        final fullInvoice = await getSalesInvoiceByName(invoiceName);
+        // final customerOutstanding = await getCustomerOutstanding(customer.name);
+        return {
+          'success': true,
+          'invoice_name': invoiceName,
+          'full_invoice': fullInvoice,
+          'message':
+              outstandingAmount > 0
+                  ? 'تم إنشاء الفاتورة كمسودة مع وجود رصيد مستحق'
+                  : 'تم إنشاء الفاتورة بنجاح',
+          'outstanding_amount': outstandingAmount,
+          // 'visit_update_status': visitUpdateResponse['success'],
+          // 'visit_message': visitUpdateResponse['message'],
+        };
+      } else {
+        return {
+          'success': false,
+          'error': 'فشل في إنشاء الفاتورة: ${response.statusCode}',
+          'details': response.body,
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'حدث خطأ أثناء إنشاء الفاتورة: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateReturnDraftSalesInvoice({
+    required Customer customer,
+    required List<Map<String, dynamic>> items,
+    required double total,
+    double paidAmount = 0.0,
+    double outstandingAmount = 0.0,
+    String priceList = 'البيع القياسية',
+    DateTime? postingDate,
+    DateTime? dueDate,
+    double? discountAmount,
+    double? discountPercentage,
+    String? invoName,
+  }) async {
+    try {
+      final invoiceExists = await validateInvoiceExists(invoName!);
+      print('''invoiceExists ====>> $invoiceExists''');
+      if (!invoiceExists) {
+        throw Exception('الفاتورة $invoName غير موجودة');
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final posProfileJson = prefs.getString('selected_pos_profile');
+      final openShiftId = prefs.getString('pos_open');
+
+      if (posProfileJson == null || posProfileJson.isEmpty) {
+        throw Exception('لم يتم تحديد إعدادات نقطة البيع (POS Profile)');
+      }
+
+      if (openShiftId == null) {
+        throw Exception('لا يوجد وردية مفتوحة');
+      }
+
+      final posProfile = json.decode(posProfileJson);
+      final company = posProfile['company'] ?? 'HR';
+      final currency = posProfile['currency'];
+      final debitTo = posProfile['custom_debit_to'];
+      final posProfileName = posProfile['name'] ?? 'Default POS Profile';
+      final posPriceList = posProfile['selling_price_list'];
+      final defaultModeOfPayment =
+          posProfile['payments']?[0]['mode_of_payment'] ?? 'Cash';
+
+      outstandingAmount = total - paidAmount;
+      print('discountPercentage = > $discountPercentage');
+      print('discountAmount = > $discountAmount');
+      print('items = > $items');
+
+      final invoiceData = {
+        'customer': customer.name,
+        'customer_name': customer.customerName,
+        'price_list': priceList,
+        'payment_terms_template': 'test',
+        'items':
+            items
+                .map(
+                  (item) => {
+                    'name': item['id'],
+                    'item_code': item['name'],
+                    'item_name': item['item_name'],
+                    'qty': item['quantity'] * -1,
+                    'rate': item['price'],
+                    'uom': item['uom'] ?? 'Nos',
+                    'discount_amount': item['discount_amount'] ?? 0.0,
+                    'discount_percentage': item['discount_percentage'] ?? 0.0,
+                    'conversion_factor': item['conversion_factor'] ?? 1,
+                    'cost_center': item['cost_center'],
+                    'income_account': item['income_account'],
+                  },
+                )
+                .toList(),
+        'taxes_and_charges': '',
+        'posting_date':
+            postingDate?.toIso8601String().split('T')[0] ??
+            DateTime.now().toIso8601String().split('T')[0],
+        'due_date':
+            dueDate?.toIso8601String().split('T')[0] ??
+            DateTime.now()
+                .add(Duration(days: 30))
+                .toIso8601String()
+                .split('T')[0],
+        'company': company,
+        'currency': currency,
+        'conversion_rate': 1,
+        'debit_to': debitTo,
+        'selling_price_list': posPriceList,
+        'ignore_pricing_rule': 0,
+        'do_not_submit': 0,
+        'is_pos': 1,
+        'pos_profile': posProfileName,
+        'update_stock': 1,
+        'advance_paid': paidAmount,
+        'outstanding_amount': outstandingAmount > 0 ? outstandingAmount : 0,
+        'custom_pos_open_shift': openShiftId,
+        'additional_discount_percentage': discountPercentage,
+        'discount_amount': discountAmount,
+      };
+      print('''before send to update =>$invoName''');
+      final response = await ApiClient.putJson(
+        '/api/resource/Sales Invoice/$invoName',
+        invoiceData,
+      );
+
+      print(
+        'Sales Invoice => status: ${response.statusCode}, body: ${response.body}',
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        final invoiceName = responseData['data']['name'];
+
+        // final result = await submitSalesInvoice(invoiceName);
+        print('shiftId => shiftId: $openShiftId');
+        // final visitUpdateResponse = await updateVisitStatus(
+        //   customerName: customer.name,
+        //   shiftId: openShiftId,
+        //   newStatus: 'فاتورة',
+        //   invoiceNumber: invoiceName,
+        // );
+        final fullInvoice = await getSalesInvoiceByName(invoiceName);
+        // final customerOutstanding = await getCustomerOutstanding(customer.name);
+        return {
+          'success': true,
+          'invoice_name': invoiceName,
+          'full_invoice': fullInvoice,
           'message':
               outstandingAmount > 0
                   ? 'تم إنشاء الفاتورة كمسودة مع وجود رصيد مستحق'

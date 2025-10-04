@@ -1,18 +1,18 @@
-import 'package:drsaf/Class/message_service.dart';
-import 'package:drsaf/screen/MaterialRequestScreenList.dart';
-import 'package:drsaf/screen/PosOpeningPage.dart';
-import 'package:drsaf/screen/appbar.dart';
-import 'package:drsaf/screen/login.dart';
-import 'package:drsaf/screen/payment_entry_list_page.dart';
-import 'package:drsaf/screen/pos.dart';
-import 'package:drsaf/screen/pos_return.dart';
-import 'package:drsaf/screen/reports.dart';
-import 'package:drsaf/screen/sales_invoice_summary_page.dart';
-import 'package:drsaf/screen/store_screen.dart';
-import 'package:drsaf/screen/visit.dart';
-import 'package:drsaf/screen/visit_report.dart';
-import 'package:drsaf/services/auth_service.dart';
-import 'package:drsaf/services/pos_service.dart';
+import 'package:alkhair_daem/Class/message_service.dart';
+import 'package:alkhair_daem/screen/MaterialRequestScreenList.dart';
+import 'package:alkhair_daem/screen/PosOpeningPage.dart';
+import 'package:alkhair_daem/screen/appbar.dart';
+import 'package:alkhair_daem/screen/login.dart';
+import 'package:alkhair_daem/screen/payment_entry_list_page.dart';
+import 'package:alkhair_daem/screen/pos.dart';
+import 'package:alkhair_daem/screen/pos_return.dart';
+import 'package:alkhair_daem/screen/reports.dart';
+import 'package:alkhair_daem/screen/sales_invoice_summary_page.dart';
+import 'package:alkhair_daem/screen/store_screen.dart';
+import 'package:alkhair_daem/screen/visit.dart';
+import 'package:alkhair_daem/screen/visit_report.dart';
+import 'package:alkhair_daem/services/auth_service.dart';
+import 'package:alkhair_daem/services/pos_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1051,7 +1051,12 @@ class _HomePageState extends State<HomePage> with RouteAware {
     final checkOpenEntry = await PosService.checkStateOpenEntry();
     print('checkOpenEntry: $checkOpenEntry');
     if (checkOpenEntry == false) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('selected_pos_profile');
+      await prefs.remove('pos_time');
+      await prefs.remove('pos_open');
       MessageService.showWarning(context, 'الوردية مغلقة!');
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const PosOpeningPage()),

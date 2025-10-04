@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:drsaf/services/warehouse_service.dart';
+import 'package:alkhair_daem/services/warehouse_service.dart';
 import '../models/bin_report.dart';
 import '../services/bin_report_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -86,7 +86,7 @@ class _BinReportPageState extends State<BinReportPage> {
           _warehouses = warehouse != null ? [warehouse.name] : [];
           _selectedWarehouse = selectedWarehouse;
         });
-        
+
         // تحميل البيانات بعد تعيين المخزن
         if (selectedWarehouse != null) {
           _fetchPage(reset: true);
@@ -235,7 +235,7 @@ class _BinReportPageState extends State<BinReportPage> {
                         ),
                       ),
                       isExpanded: true,
-                      value: _selectedWarehouse,
+                      initialValue: _selectedWarehouse,
                       items:
                           _warehouses
                               .map(
@@ -259,21 +259,21 @@ class _BinReportPageState extends State<BinReportPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 3,
-                                         child: TextField(
-                       controller: _itemController,
-                                               decoration: InputDecoration(
-                          labelText: 'اسم الصنف أو الكود',
-                          hintText: 'ابحث في اسم الصنف أو كود الصنف',
-                          filled: true,
-                          fillColor: secondaryColor,
-                          prefixIcon: Icon(Icons.search, color: primaryColor),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                    child: TextField(
+                      controller: _itemController,
+                      decoration: InputDecoration(
+                        labelText: 'اسم الصنف أو الكود',
+                        hintText: 'ابحث في اسم الصنف أو كود الصنف',
+                        filled: true,
+                        fillColor: secondaryColor,
+                        prefixIcon: Icon(Icons.search, color: primaryColor),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                       onChanged: _onSearchChanged,
-                       onSubmitted: (_) => _fetchPage(reset: true),
-                     ),
+                      ),
+                      onChanged: _onSearchChanged,
+                      onSubmitted: (_) => _fetchPage(reset: true),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
@@ -294,75 +294,109 @@ class _BinReportPageState extends State<BinReportPage> {
                 child:
                     _error != null
                         ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.error_outline, size: 50, color: Colors.red),
-                                SizedBox(height: 16),
-                                Text(
-                                  _error!,
-                                  style: TextStyle(fontSize: 16, color: Colors.red),
-                                  textAlign: TextAlign.center,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 50,
+                                color: Colors.red,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                _error!,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.red,
                                 ),
-                                SizedBox(height: 16),
-                                ElevatedButton(
-                                  onPressed: () => _fetchPage(reset: true),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: primaryColor,
-                                    foregroundColor: secondaryColor,
-                                  ),
-                                  child: Text('إعادة المحاولة'),
+                                textAlign: TextAlign.center,
+                              ),
+                              SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: () => _fetchPage(reset: true),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: primaryColor,
+                                  foregroundColor: secondaryColor,
                                 ),
-                              ],
-                            ),
-                          )
-                                                 : _data.isEmpty && !_loading && _itemController.text.trim().isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.inventory_2_outlined, size: 80, color: Colors.grey),
-                                    SizedBox(height: 16),
-                                    Text(
-                                      'لا توجد بيانات مخزون',
-                                      style: TextStyle(fontSize: 18, color: Colors.grey),
-                                    ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'جرب تغيير معايير البحث',
-                                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                                    ),
-                                  ],
+                                child: Text('إعادة المحاولة'),
+                              ),
+                            ],
+                          ),
+                        )
+                        : _data.isEmpty &&
+                            !_loading &&
+                            _itemController.text.trim().isEmpty
+                        ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.inventory_2_outlined,
+                                size: 80,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'لا توجد بيانات مخزون',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey,
                                 ),
-                              )
-                            : _data.isEmpty && !_loading && _itemController.text.trim().isNotEmpty
-                                ? Center(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.search_off, size: 80, color: Colors.grey),
-                                        SizedBox(height: 16),
-                                                                             Text(
-                                       'لا توجد نتائج للبحث',
-                                       style: TextStyle(fontSize: 18, color: Colors.grey),
-                                     ),
-                                     SizedBox(height: 8),
-                                     Text(
-                                       'البحث: "${_itemController.text.trim()}"',
-                                       style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                                     ),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          'جرب كلمات بحث مختلفة',
-                                          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                : ListView.builder(
-                              itemCount: _data.length + (_hasMore ? 1 : 0),
-                              itemBuilder: (ctx, i) {
-                                if (i < _data.length) {
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'جرب تغيير معايير البحث',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                        : _data.isEmpty &&
+                            !_loading &&
+                            _itemController.text.trim().isNotEmpty
+                        ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.search_off,
+                                size: 80,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'لا توجد نتائج للبحث',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'البحث: "${_itemController.text.trim()}"',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'جرب كلمات بحث مختلفة',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                        : ListView.builder(
+                          itemCount: _data.length + (_hasMore ? 1 : 0),
+                          itemBuilder: (ctx, i) {
+                            if (i < _data.length) {
                               final row = _data[i];
                               return Card(
                                 margin: const EdgeInsets.symmetric(vertical: 6),
@@ -371,31 +405,35 @@ class _BinReportPageState extends State<BinReportPage> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 elevation: 3,
-                                                                 child: ListTile(
-                                   title: Text(
-                                     row.itemName.isNotEmpty ? row.itemName : row.itemCode,
-                                     style: TextStyle(
-                                       fontWeight: FontWeight.bold,
-                                       color: Color.fromARGB(255, 85, 84, 84),
-                                     ),
-                                   ),
-                                   subtitle: Column(
-                                     crossAxisAlignment: CrossAxisAlignment.start,
-                                     children: [
-                                       if (row.itemName.isNotEmpty && row.itemName != row.itemCode)
-                                         Text('الكود: ${row.itemCode}'),
-                                       Text('المخزن: ${row.warehouse}'),
-                                     ],
-                                   ),
-                                   trailing: Text(
-                                     'الكمية: ${row.actualQty}',
-                                     style: TextStyle(
-                                       fontSize: 18, // حجم الخط المكبر
-                                       fontWeight: FontWeight.bold,
-                                       color: Color.fromARGB(255, 85, 84, 84),
-                                     ),
-                                   ),
-                                 ),
+                                child: ListTile(
+                                  title: Text(
+                                    row.itemName.isNotEmpty
+                                        ? row.itemName
+                                        : row.itemCode,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color.fromARGB(255, 85, 84, 84),
+                                    ),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (row.itemName.isNotEmpty &&
+                                          row.itemName != row.itemCode)
+                                        Text('الكود: ${row.itemCode}'),
+                                      Text('المخزن: ${row.warehouse}'),
+                                    ],
+                                  ),
+                                  trailing: Text(
+                                    'الكمية: ${row.actualQty}',
+                                    style: TextStyle(
+                                      fontSize: 18, // حجم الخط المكبر
+                                      fontWeight: FontWeight.bold,
+                                      color: Color.fromARGB(255, 85, 84, 84),
+                                    ),
+                                  ),
+                                ),
                               );
                             } else {
                               return Padding(

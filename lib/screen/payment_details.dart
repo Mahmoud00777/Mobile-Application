@@ -1,14 +1,11 @@
-import 'package:drsaf/models/payment_entry_report';
-import 'package:drsaf/services/payment_entry_report_service.dart';
+import 'package:alkhair_daem/models/payment_entry_report';
+import 'package:alkhair_daem/services/payment_entry_report_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:sunmi_printer_plus/core/enums/enums.dart';
-import 'package:sunmi_printer_plus/core/styles/sunmi_text_style.dart';
-import 'package:sunmi_printer_plus/core/sunmi/sunmi_printer.dart';
-import 'package:sunmi_printer_plus/core/types/sunmi_column.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:sunmi_printer_plus/sunmi_printer_plus.dart';
 
 class PaymentDetails extends StatefulWidget {
   final dynamic payment;
@@ -209,7 +206,7 @@ void printTest(PaymentEntryReport payment) async {
   final formattedDate = DateFormat('yyyy-MM-dd – HH:mm').format(now);
   await SunmiPrinter.initPrinter();
   await SunmiPrinter.startTransactionPrint(true);
-  await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
+  // await SunmiPrinter.printImage(imageBytes, align: SunmiPrintAlign.CENTER);
   await SunmiPrinter.printText(
     'إيصال دفع',
     style: SunmiTextStyle(
@@ -266,17 +263,18 @@ void printTest(PaymentEntryReport payment) async {
     style: SunmiTextStyle(align: SunmiPrintAlign.CENTER),
   );
   await SunmiPrinter.printText(
-    'شكرًا لكم!',
+    'شكرًا لتعاملكم معنا',
     style: SunmiTextStyle(
       bold: true,
       fontSize: 35,
       align: SunmiPrintAlign.CENTER,
     ),
   );
-  await SunmiPrinter.printText(
-    'نتمنى لكم يوماً سعيداً 😊',
-    style: SunmiTextStyle(fontSize: 30, align: SunmiPrintAlign.CENTER),
-  );
+
+  // await SunmiPrinter.printText(
+  //   'نتمنى أن نراكم مجددًا 😊',
+  //   style: SunmiTextStyle(fontSize: 35, align: SunmiPrintAlign.CENTER),
+  // );
   await SunmiPrinter.lineWrap(3);
   await SunmiPrinter.cutPaper();
 }

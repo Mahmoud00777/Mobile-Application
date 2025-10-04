@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/visit.dart';
-import 'package:drsaf/services/api_client.dart';
+import 'package:alkhair_daem/services/api_client.dart';
 
 class VisitService {
   static String _getErrorReason(int statusCode, String body) {

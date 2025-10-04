@@ -1,9 +1,11 @@
 import 'dart:convert';
-import 'package:drsaf/Class/message_service.dart';
+import 'package:alkhair_daem/Class/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:drsaf/services/pos_service.dart';
-import 'package:drsaf/screen/home.dart';
+import 'package:alkhair_daem/services/pos_service.dart';
+import 'package:alkhair_daem/screen/home.dart';
+import 'package:alkhair_daem/services/auth_service.dart';
+import 'package:alkhair_daem/screen/login.dart';
 
 class PosOpeningPage extends StatefulWidget {
   const PosOpeningPage({super.key});
@@ -93,10 +95,16 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
       );
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('خطأ: ${e.toString()}')));
+      MessageService.showError(context, 'خطأ: ${e.toString()}');
     }
+  }
+
+  Future<void> _logout() async {
+    await AuthService.logout();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const Login()),
+    );
   }
 
   @override
@@ -122,6 +130,13 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: _logout,
+            tooltip: 'تسجيل الخروج',
+          ),
+        ],
       ),
       body:
           _isLoading
@@ -175,7 +190,7 @@ class _PosOpeningPageState extends State<PosOpeningPage> {
                             ),
                             const SizedBox(height: 16),
                             DropdownButtonFormField<String>(
-                              value: selectedPOSProfileName,
+                              initialValue: selectedPOSProfileName,
                               decoration: InputDecoration(
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),

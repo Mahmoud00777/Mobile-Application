@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:drsaf/models/customer.dart';
-import 'package:drsaf/models/customer_ledger_summary.dart';
-import 'package:drsaf/services/api_client.dart';
+import 'package:alkhair_daem/models/customer_ledger_summary.dart';
+import 'package:alkhair_daem/models/customer.dart';
+import 'package:alkhair_daem/services/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class CustomerLedgerService {
